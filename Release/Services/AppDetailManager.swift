@@ -1,0 +1,21 @@
+//
+//  AppDetailManager.swift
+//  Release
+//
+//  Created by Roger on 2025/10/6.
+//
+
+import SwiftUI
+import Combine
+
+class AppDetailManager: ObservableObject {
+    static let shared = AppDetailManager()
+    
+    @Published var selectedApp: AppInfo?
+    
+    private init() {}
+    
+    func setSelectedApp(_ app: AppInfo) {
+        selectedApp = app
+    }
+}

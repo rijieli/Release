@@ -11,11 +11,17 @@ import Combine
 import SwiftUI
 
 class AppStoreConnectService: ObservableObject {
+    static let shared = AppStoreConnectService()
+    
     @Published var apps: [AppInfo] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
+    @Published var appDetail: AppDetail?
+    @Published var isLoadingDetail: Bool = false
     
     private var configuration: APIConfiguration?
+    
+    private init() {}
     
     func configure(issuerID: String, privateKeyID: String, privateKey: String) {
         do {
@@ -191,7 +197,7 @@ class AppStoreConnectService: ObservableObject {
             let provider = APIProvider(configuration: configuration)
             let request = APIEndpoint.v1.apps.get(parameters: .init(limit: 1))
             
-            let response = try await provider.request(request)
+            _ = try await provider.request(request)
             return true
         } catch {
             await MainActor.run {
@@ -217,5 +223,103 @@ class AppStoreConnectService: ObservableObject {
     private func determineStatus(from version: AppStoreConnect_Swift_SDK.App.Relationships.AppStoreVersions.Datum?) -> AppStatus {
         // This would need to be expanded based on actual API response
         return .readyForSale
+    }
+    
+    // MARK: - App Detail Methods
+    
+    func loadAppDetail(for appId: String) async {
+        guard let configuration = configuration else {
+            await MainActor.run {
+                errorMessage = "API not configured. Please check your settings."
+            }
+            return
+        }
+        
+        await MainActor.run {
+            isLoadingDetail = true
+            errorMessage = nil
+        }
+        
+        do {
+            let provider = APIProvider(configuration: configuration)
+            
+            // Get detailed app information
+            let appRequest = APIEndpoint.v1.apps.id(appId).get(parameters: .init(
+                fieldsApps: [.name, .bundleID, .sku, .primaryLocale],
+                include: [.appStoreVersions]
+            ))
+            
+            let appResponse = try await provider.request(appRequest)
+            
+            // Get app store versions with release notes
+            let versionsRequest = APIEndpoint.v1.apps.id(appId).appStoreVersions.get(parameters: .init(
+                fieldsAppStoreVersions: [.versionString, .appStoreState, .platform, .releaseType],
+                limit: 10,
+                include: [.appStoreVersionLocalizations],
+            ))
+            
+            let versionsResponse = try await provider.request(versionsRequest)
+            
+            // Get release notes for the latest version
+            var releaseNotes: [ReleaseNote] = []
+            
+            if let latestVersion = versionsResponse.data.first {
+                let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(latestVersion.id).appStoreVersionLocalizations.get(parameters: .init(
+                    fieldsAppStoreVersionLocalizations: [.locale, .whatsNew]
+                ))
+                
+                do {
+                    let releaseNotesResponse = try await provider.request(releaseNotesRequest)
+                    
+                    let localizedNotes = releaseNotesResponse.data.map { localization in
+                        LocalizedReleaseNote(
+                            id: localization.id,
+                            locale: localization.attributes?.locale ?? "en",
+                            notes: localization.attributes?.whatsNew ?? "",
+                            whatsNew: localization.attributes?.whatsNew
+                        )
+                    }
+                    
+                    if !localizedNotes.isEmpty {
+                        let releaseNote = ReleaseNote(
+                            id: latestVersion.id,
+                            version: latestVersion.attributes?.versionString ?? "Unknown",
+                            localizedNotes: localizedNotes
+                        )
+                        releaseNotes.append(releaseNote)
+                    }
+                } catch {
+                    // Silently continue if release notes fetch fails
+                }
+            }
+            
+            // Create AppDetail
+            let app = appResponse.data
+            let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
+            let status = determineStatus(from: app.relationships?.appStoreVersions?.data?.first)
+            
+            let appDetail = AppDetail(
+                id: app.id,
+                name: app.attributes?.name ?? "Unknown",
+                bundleID: app.attributes?.bundleID ?? "",
+                platform: platform,
+                status: status,
+                version: versionsResponse.data.first?.attributes?.versionString,
+                sku: app.attributes?.sku,
+                primaryLanguage: app.attributes?.primaryLocale,
+                releaseNotes: releaseNotes
+            )
+            
+            await MainActor.run {
+                self.appDetail = appDetail
+                self.isLoadingDetail = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Failed to load app details: \(error.localizedDescription)"
+                self.isLoadingDetail = false
+            }
+        }
     }
 }

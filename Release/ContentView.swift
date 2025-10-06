@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var apiService = AppStoreConnectService()
+    @StateObject private var apiService = AppStoreConnectService.shared
     @StateObject private var settingsManager = SettingsManager()
     @State private var selectedPlatform: Platform? = nil
     @State private var searchText = ""
@@ -233,6 +233,8 @@ struct EmptyStateView: View {
 struct AppsTableView: View {
     let apps: [AppInfo]
     @Binding var sortOrder: [KeyPathComparator<AppInfo>]
+    @StateObject private var detailManager = AppDetailManager.shared
+    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         Table(apps, sortOrder: $sortOrder) {
@@ -286,6 +288,16 @@ struct AppsTableView: View {
                     .foregroundStyle(.secondary)
             }
             .width(100)
+            
+            TableColumn("Actions") { app in
+                Button("Details") {
+                    detailManager.setSelectedApp(app)
+                    openWindow(id: "app-detail")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .width(80)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
         .scrollContentBackground(.hidden)

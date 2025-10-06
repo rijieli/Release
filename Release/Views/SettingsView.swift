@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @StateObject private var settingsManager = SettingsManager()
-    @StateObject private var apiService = AppStoreConnectService()
+    @StateObject private var apiService = AppStoreConnectService.shared
     @State private var showingFilePicker = false
     @State private var testResult: String?
     @State private var isTestingConnection = false

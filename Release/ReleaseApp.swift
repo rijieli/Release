@@ -32,6 +32,18 @@ struct ReleaseApp: App {
             }
         }
         
+        // App Detail Window
+        WindowGroup("App Details", id: "app-detail") {
+            if let appInfo = AppDetailManager.shared.selectedApp {
+                AppDetailView(appInfo: appInfo)
+            } else {
+                Text("No app selected")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        
         Settings {
             SettingsView()
         }
