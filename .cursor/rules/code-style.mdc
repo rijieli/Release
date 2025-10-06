@@ -5,3 +5,4 @@ alwaysApply: true
 
 - This is a macOS 14 app
 - Use mordern macOS 14 API
+- This project using https://github.com/AvdLee/appstoreconnect-swift-sdk

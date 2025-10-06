@@ -213,7 +213,6 @@ struct EmptyStateView: View {
             Image(systemName: "app.badge")
                 .font(.system(size: 80))
                 .foregroundStyle(.secondary)
-                .symbolEffect(.bounce, isActive: true)
             
             VStack(spacing: 12) {
                 Text("No Apps Found")

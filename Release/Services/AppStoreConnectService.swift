@@ -19,13 +19,6 @@ class AppStoreConnectService: ObservableObject {
     
     func configure(issuerID: String, privateKeyID: String, privateKey: String) {
         do {
-            // Log the configuration details for debugging
-            print("🔧 Configuring App Store Connect API:")
-            print("   Issuer ID: \(issuerID)")
-            print("   Private Key ID: \(privateKeyID)")
-            print("   Private Key Length: \(privateKey.count) characters")
-            print("   Private Key Preview: \(String(privateKey.prefix(50)))...")
-            
             // Try different approaches - the SDK might expect just the base64 content
             let privateKeyToUse: String
             
@@ -35,14 +28,9 @@ class AppStoreConnectService: ObservableObject {
                     .filter { !$0.contains("-----BEGIN") && !$0.contains("-----END") }
                     .joined()
                 privateKeyToUse = lines
-                print("   Using raw base64 content without PEM headers")
             } else {
                 privateKeyToUse = privateKey
-                print("   Using private key as-is")
             }
-            
-            print("   Final Private Key Length: \(privateKeyToUse.count) characters")
-            print("   Final Private Key Preview: \(String(privateKeyToUse.prefix(50)))...")
             
             // Try to create the configuration with the private key
             do {
@@ -53,7 +41,6 @@ class AppStoreConnectService: ObservableObject {
                 )
             } catch {
                 // If that fails, try with the original private key
-                print("   First attempt failed, trying with original private key...")
                 configuration = try APIConfiguration(
                     issuerID: issuerID,
                     privateKeyID: privateKeyID,
@@ -61,20 +48,8 @@ class AppStoreConnectService: ObservableObject {
                 )
             }
             
-            print("✅ API Configuration successful!")
-            
         } catch {
-            print("❌ API Configuration failed:")
-            print("   Error: \(error)")
-            print("   Error Type: \(type(of: error))")
-            print("   Localized Description: \(error.localizedDescription)")
-            
-            // Provide more detailed error information
-            if let jwtError = error as? AppStoreConnect_Swift_SDK.JWT.Error {
-                print("   JWT Error Details: \(jwtError)")
-            }
-            
-            errorMessage = "Failed to configure API: \(error.localizedDescription)\n\nDebug Info:\n• Issuer ID: \(issuerID)\n• Key ID: \(privateKeyID)\n• Private Key Length: \(privateKey.count) chars\n• Error Type: \(type(of: error))\n\nThis might be a known issue with the App Store Connect Swift SDK. Try:\n• Using a different API key\n• Checking if the key has proper permissions\n• Verifying the key hasn't expired"
+            errorMessage = "Failed to configure API: \(error.localizedDescription)"
         }
     }
     
@@ -146,22 +121,51 @@ class AppStoreConnectService: ObservableObject {
         
         do {
             let provider = APIProvider(configuration: configuration)
-            let request = APIEndpoint.v1.apps.get(parameters: .init(
+            
+            // First, get all apps
+            let appsRequest = APIEndpoint.v1.apps.get(parameters: .init(
+                fieldsApps: [.name, .bundleID],
                 limit: 200
             ))
             
-            let response = try await provider.request(request)
+            let appsResponse = try await provider.request(appsRequest)
+            
+            // Then get app store versions for each app
+            var versionMap: [String: String] = [:]
+            
+            for app in appsResponse.data {
+                do {
+                    let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
+                        fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
+                        limit: 1
+                    ))
+                    
+                    let versionsResponse = try await provider.request(versionsRequest)
+                    
+                    // Get the latest version (sorted by version string descending)
+                    if let latestVersion = versionsResponse.data.first,
+                       let versionString = latestVersion.attributes?.versionString {
+                        versionMap[app.id] = versionString
+                    }
+                } catch {
+                    // Silently continue if version fetch fails for an app
+                }
+            }
+            
+            let response = appsResponse
             
             let appInfos = response.data.map { app in
                 let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
                 let status = determineStatus(from: app.relationships?.appStoreVersions?.data?.first)
+                let version = versionMap[app.id]
                 
                 return AppInfo(
                     id: app.id,
                     name: app.attributes?.name ?? "Unknown",
                     bundleID: app.attributes?.bundleID ?? "",
                     platform: platform,
-                    status: status
+                    status: status,
+                    version: version
                 )
             }
             
@@ -180,29 +184,18 @@ class AppStoreConnectService: ObservableObject {
     
     func testConnection() async -> Bool {
         guard let configuration = configuration else { 
-            print("❌ No configuration available for connection test")
             return false 
         }
-        
-        print("🧪 Testing App Store Connect API connection...")
         
         do {
             let provider = APIProvider(configuration: configuration)
             let request = APIEndpoint.v1.apps.get(parameters: .init(limit: 1))
             
-            print("   Making API request...")
             let response = try await provider.request(request)
-            print("✅ Connection test successful! Found \(response.data.count) apps")
-            
             return true
         } catch {
-            print("❌ Connection test failed:")
-            print("   Error: \(error)")
-            print("   Error Type: \(type(of: error))")
-            print("   Localized Description: \(error.localizedDescription)")
-            
             await MainActor.run {
-                self.errorMessage = "Connection test failed: \(error.localizedDescription)\n\nDebug Info:\n• Error Type: \(type(of: error))\n• Full Error: \(error)"
+                self.errorMessage = "Connection test failed: \(error.localizedDescription)"
             }
             return false
         }
