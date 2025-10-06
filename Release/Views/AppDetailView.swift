@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppStoreConnect_Swift_SDK
 
 struct AppDetailView: View {
     let appInfo: AppInfo

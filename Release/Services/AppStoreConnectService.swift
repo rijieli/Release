@@ -138,6 +138,7 @@ class AppStoreConnectService: ObservableObject {
             
             // Then get app store versions for each app
             var versionMap: [String: String] = [:]
+            var statusMap: [String: AppStatus] = [:]
             
             for app in appsResponse.data {
                 do {
@@ -149,12 +150,21 @@ class AppStoreConnectService: ObservableObject {
                     let versionsResponse = try await provider.request(versionsRequest)
                     
                     // Get the latest version (sorted by version string descending)
-                    if let latestVersion = versionsResponse.data.first,
-                       let versionString = latestVersion.attributes?.versionString {
-                        versionMap[app.id] = versionString
+                    if let latestVersion = versionsResponse.data.first {
+                        if let versionString = latestVersion.attributes?.versionString {
+                            versionMap[app.id] = versionString
+                        }
+                        
+                        // Determine status from app store state
+                        let status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
+                        statusMap[app.id] = status
+                    } else {
+                        // No app store version exists
+                        statusMap[app.id] = .prepareForSubmission
                     }
                 } catch {
-                    // Silently continue if version fetch fails for an app
+                    // If we can't fetch versions, assume no version exists
+                    statusMap[app.id] = .prepareForSubmission
                 }
             }
             
@@ -162,7 +172,7 @@ class AppStoreConnectService: ObservableObject {
             
             let appInfos = response.data.map { app in
                 let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
-                let status = determineStatus(from: app.relationships?.appStoreVersions?.data?.first)
+                let status = statusMap[app.id] ?? .prepareForSubmission
                 let version = versionMap[app.id]
                 
                 return AppInfo(
@@ -220,9 +230,17 @@ class AppStoreConnectService: ObservableObject {
         }
     }
     
+    private func determineStatusFromAppStoreState(_ appStoreState: AppStoreConnect_Swift_SDK.AppStoreVersionState?) -> AppStatus {
+        guard let state = appStoreState else {
+            return .prepareForSubmission
+        }
+        
+        return state
+    }
+    
     private func determineStatus(from version: AppStoreConnect_Swift_SDK.App.Relationships.AppStoreVersions.Datum?) -> AppStatus {
-        // This would need to be expanded based on actual API response
-        return .readyForSale
+        // This method is kept for backward compatibility but should not be used
+        return .prepareForSubmission
     }
     
     // MARK: - App Detail Methods
@@ -296,7 +314,13 @@ class AppStoreConnectService: ObservableObject {
             // Create AppDetail
             let app = appResponse.data
             let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
-            let status = determineStatus(from: app.relationships?.appStoreVersions?.data?.first)
+            let status: AppStatus
+            
+            if let latestVersion = versionsResponse.data.first {
+                status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
+            } else {
+                status = .prepareForSubmission
+            }
             
             let appDetail = AppDetail(
                 id: app.id,

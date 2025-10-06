@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppStoreConnect_Swift_SDK
 
 struct ContentView: View {
     @StateObject private var apiService = AppStoreConnectService.shared
@@ -273,9 +274,9 @@ struct AppsTableView: View {
                     Image(systemName: app.status.systemImage)
                         .foregroundStyle(app.status.color)
                         .frame(width: 16, height: 16)
-                        .symbolEffect(.pulse, isActive: app.status == .processing)
+                        .symbolEffect(.pulse, isActive: app.status == .processingForAppStore)
                     
-                    Text(app.status.rawValue)
+                    Text(app.status.description)
                         .font(.caption)
                         .foregroundStyle(.primary)
                 }

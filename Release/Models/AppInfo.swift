@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import AppStoreConnect_Swift_SDK
 
 struct AppInfo: Identifiable, Hashable {
     let id: String
@@ -46,40 +47,6 @@ enum Platform: String, CaseIterable, Identifiable, Comparable {
     }
     
     static func < (lhs: Platform, rhs: Platform) -> Bool {
-        return lhs.rawValue < rhs.rawValue
-    }
-}
-
-enum AppStatus: String, CaseIterable, Comparable {
-    case readyForSale = "Ready for Sale"
-    case pending = "Pending"
-    case processing = "Processing"
-    case rejected = "Rejected"
-    case developerRejected = "Developer Rejected"
-    case metadataRejected = "Metadata Rejected"
-    case removedFromSale = "Removed from Sale"
-    case invalidBinary = "Invalid Binary"
-    
-    var color: Color {
-        switch self {
-        case .readyForSale: return .green
-        case .pending, .processing: return .orange
-        case .rejected, .developerRejected, .metadataRejected, .invalidBinary: return .red
-        case .removedFromSale: return .gray
-        }
-    }
-    
-    var systemImage: String {
-        switch self {
-        case .readyForSale: return "checkmark.circle.fill"
-        case .pending: return "clock.fill"
-        case .processing: return "gear.circle.fill"
-        case .rejected, .developerRejected, .metadataRejected, .invalidBinary: return "xmark.circle.fill"
-        case .removedFromSale: return "minus.circle.fill"
-        }
-    }
-    
-    static func < (lhs: AppStatus, rhs: AppStatus) -> Bool {
         return lhs.rawValue < rhs.rawValue
     }
 }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppStoreConnect_Swift_SDK
 
 struct ReleaseNotesTab: View {
     let appDetail: AppDetail

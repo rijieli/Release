@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppStoreConnect_Swift_SDK
 
 struct BasicInfoTab: View {
     let appDetail: AppDetail
@@ -95,24 +96,7 @@ struct BasicInfoTab: View {
     }
     
     private func statusDescription(for status: AppStatus) -> String {
-        switch status {
-        case .readyForSale:
-            return "This app is currently available for sale on the App Store."
-        case .pending:
-            return "This app is pending review by Apple."
-        case .processing:
-            return "This app is currently being processed."
-        case .rejected:
-            return "This app has been rejected by Apple."
-        case .developerRejected:
-            return "This app has been rejected by the developer."
-        case .metadataRejected:
-            return "This app's metadata has been rejected."
-        case .removedFromSale:
-            return "This app has been removed from sale."
-        case .invalidBinary:
-            return "This app has an invalid binary."
-        }
+        status.description
     }
     
     private func platformDescription(for platform: Platform) -> String {
