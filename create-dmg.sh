@@ -19,8 +19,6 @@ else
   APP_NAME="$1"
 fi
 
-DMG_NAME="$APP_NAME.dmg"
-
 # Check if the folder name is provided as second argument
 if [ -z "$2" ]; then
   FOLDER_PATH="Archives"
@@ -55,7 +53,8 @@ if [ -z "$APP_VERSION" ]; then
   APP_VERSION="latest"
 fi
 
-DMG_NAME="$APP_NAME_$APP_VERSION.dmg"
+parts=("$APP_NAME" "$APP_VERSION")
+DMG_NAME="${(j:_:)parts}.dmg"
 
 # Check if DMG already exists in the current directory
 if [ -f "$DMG_NAME" ]; then
