@@ -35,7 +35,36 @@ struct LocalizedReleaseNote: Identifiable, Hashable {
     }
     
     var displayName: String {
-        let locale = Locale(identifier: self.locale)
-        return locale.localizedString(forLanguageCode: locale.languageCode ?? "en") ?? self.locale
+        let localeIdentifier = self.locale
+        let userLocale = Locale.current
+        
+        if let localized = userLocale.localizedString(forIdentifier: localeIdentifier) {
+            return localized
+        }
+        
+        let locale = Locale(identifier: localeIdentifier)
+        
+        if let languageCode = locale.language.languageCode?.identifier,
+           let languageName = userLocale.localizedString(forLanguageCode: languageCode) ??
+                              userLocale.localizedString(forIdentifier: languageCode) {
+            
+            var components: [String] = [languageName.capitalized(with: userLocale)]
+            
+            if let scriptCode = locale.language.script?.identifier {
+                if let scriptName = userLocale.localizedString(forScriptCode: scriptCode) ??
+                                    userLocale.localizedString(forIdentifier: "\(languageCode)-\(scriptCode)") {
+                    components.append(scriptName.capitalized(with: userLocale))
+                }
+            }
+            
+            if let regionCode = locale.language.region?.identifier,
+               let regionName = userLocale.localizedString(forRegionCode: regionCode) {
+                components.append("(\(regionName))")
+            }
+            
+            return components.joined(separator: " ")
+        }
+        
+        return localeIdentifier
     }
 }

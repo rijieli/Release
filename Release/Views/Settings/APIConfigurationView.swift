@@ -132,7 +132,7 @@ struct APIConfigurationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
 
                 // Status Section
                 VStack(spacing: 16) {
@@ -178,7 +178,7 @@ struct APIConfigurationView: View {
                     }
                 }
                 .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             }
             .padding(.vertical, 20)
             .padding(.horizontal, 12)

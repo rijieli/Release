@@ -14,32 +14,6 @@ struct BasicInfoTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // App Icon Section
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("App Icon")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    HStack(spacing: 16) {
-                        AppIconView(appId: appDetail.id, bundleID: appDetail.bundleID, platform: appDetail.platform, size: 80)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(appDetail.name)
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            
-                            Text(appDetail.bundleID)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            
-                        }
-                        
-                        Spacer()
-                    }
-                }
-                .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                
                 // App Information Section
                 VStack(alignment: .leading, spacing: 16) {
                     Text("App Information")
@@ -59,63 +33,7 @@ struct BasicInfoTab: View {
                     }
                 }
                 .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                
-                // Status Information Section
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Status Information")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    HStack(spacing: 12) {
-                        Image(systemName: appDetail.status.systemImage)
-                            .foregroundStyle(appDetail.status.color)
-                            .font(.title2)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(appDetail.status.rawValue)
-                                .font(.headline)
-                            
-                            Text(statusDescription(for: appDetail.status))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding()
-                    .background(appDetail.status.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                }
-                .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                
-                // Platform Information Section
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Platform Information")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    HStack(spacing: 12) {
-                        Image(systemName: appDetail.platform.systemImage)
-                            .foregroundStyle(.blue)
-                            .font(.title2)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(appDetail.platform.rawValue)
-                                .font(.headline)
-                            
-                            Text(platformDescription(for: appDetail.platform))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding()
-                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                }
-                .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             }
             .padding()
         }

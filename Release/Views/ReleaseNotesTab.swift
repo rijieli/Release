@@ -67,12 +67,35 @@ struct ReleaseNotesTab: View {
             }
         }
         .onChange(of: appDetail.releaseNotes) { _, newValue in
+            let existingStates = editorStates
+            
             guard let latest = newValue.first else {
                 editorStates = []
                 return
             }
-            editorStates = latest.localizedNotes.map { LocaleEditorState(note: $0) }
-            templateText = ""
+            
+            let mergedStates = latest.localizedNotes.map { note -> LocaleEditorState in
+                if var existing = existingStates.first(where: { $0.id == note.id }) {
+                    existing.originalText = note.notes
+                    
+                    if existing.uploadStatus == .success {
+                        existing.text = note.notes
+                        existing.uploadStatus = .idle
+                    } else if !existing.hasChanges {
+                        existing.text = note.notes
+                    }
+                    
+                    return existing
+                } else {
+                    return LocaleEditorState(note: note)
+                }
+            }
+            
+            editorStates = mergedStates
+            
+            if mergedStates.allSatisfy({ !$0.hasChanges }) {
+                templateText = ""
+            }
         }
         .confirmationDialog("Confirm Upload", isPresented: $showUploadConfirmation, titleVisibility: .visible) {
             Button("Upload") {
@@ -168,7 +191,11 @@ struct ReleaseNotesTab: View {
                 Text("Template")
                     .font(.headline)
                 
-                ReleaseEditor(text: $templateText)
+                ReleaseEditor(
+                    text: $templateText,
+                    isEditable: isEditable,
+                    minHeight: 120
+                )
                 
                 HStack(spacing: 12) {
                     Button("Apply All") {
@@ -187,7 +214,6 @@ struct ReleaseNotesTab: View {
                         showUploadAllConfirmation = true
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.orange)
                     .disabled(!hasPendingChanges)
                     
                     Button("Fetch Previous Versions") {
@@ -236,43 +262,54 @@ struct ReleaseNotesTab: View {
     }
     
     private func uploadLocale(withId localeID: String) async {
-        guard let index = editorStates.firstIndex(where: { $0.id == localeID }) else { return }
-        guard editorStates[index].hasChanges else {
-            await MainActor.run {
-                pendingUploadLocaleID = nil
-            }
-            return
-        }
-        
-        let newText = editorStates[index].text
+        var textToUpload: String?
         
         await MainActor.run {
+            guard let index = editorStates.firstIndex(where: { $0.id == localeID }),
+                  editorStates[index].hasChanges else {
+                pendingUploadLocaleID = nil
+                return
+            }
+            
             editorStates[index].uploadStatus = .uploading
+            textToUpload = editorStates[index].text
         }
         
+        guard let payload = textToUpload else { return }
+        
         do {
-            let updatedNote = try await apiService.updateReleaseNotes(localizationId: localeID, whatsNew: newText)
-            let successDate = Date()
+            let updatedNote = try await apiService.updateReleaseNotes(localizationId: localeID, whatsNew: payload)
             await MainActor.run {
-                editorStates[index].text = updatedNote.notes
-                editorStates[index].originalText = updatedNote.notes
-                editorStates[index].uploadStatus = .success(successDate)
+                if let index = editorStates.firstIndex(where: { $0.id == localeID }) {
+                    editorStates[index].text = updatedNote.notes
+                    editorStates[index].originalText = updatedNote.notes
+                    editorStates[index].uploadStatus = .success
+                }
+                alertMessage = nil
+                pendingUploadLocaleID = nil
             }
         } catch {
             await MainActor.run {
-                editorStates[index].uploadStatus = .failure(error.localizedDescription)
+                if let index = editorStates.firstIndex(where: { $0.id == localeID }) {
+                    editorStates[index].uploadStatus = .failure(error.localizedDescription)
+                }
                 alertMessage = error.localizedDescription
+                pendingUploadLocaleID = nil
             }
-        }
-        
-        await MainActor.run {
-            pendingUploadLocaleID = nil
         }
     }
     
     private func uploadAll() async {
-        for state in editorStates where state.hasChanges {
-            await uploadLocale(withId: state.id)
+        let ids = await MainActor.run { editorStates.compactMap { $0.hasChanges ? $0.id : nil } }
+        guard !ids.isEmpty else {
+            await MainActor.run {
+                showUploadAllConfirmation = false
+            }
+            return
+        }
+        
+        for localeID in ids {
+            await uploadLocale(withId: localeID)
         }
         await MainActor.run {
             showUploadAllConfirmation = false
@@ -340,7 +377,7 @@ struct ReleaseNoteCard: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(releaseNote.localizedNotes) { localizedNote in
@@ -350,22 +387,27 @@ struct ReleaseNoteCard: View {
             }
         }
         .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
 private struct ReleaseEditor: View {
     @Binding var text: String
+    var isEditable: Bool = true
+    var minHeight: CGFloat = 68
+    
     var body: some View {
         TextEditor(text: $text)
-            .frame(height: 100)
+            .frame(minHeight: minHeight)
             .padding(8)
-            .background(.white, in: RoundedRectangle(cornerRadius: 8))
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(.secondary.opacity(0.3))
             )
             .scrollContentBackground(.hidden)
+            .disabled(!isEditable)
+            .opacity(isEditable ? 1 : 0.6)
     }
 }
 
@@ -397,34 +439,66 @@ private struct EditableLocalizedReleaseNoteView: View {
                 
                 Spacer()
                 
-                Button("Reset") {
-                    resetAction()
+                HStack(spacing: 12) {
+                    Button("Reset") {
+                        resetAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canEdit || !state.hasChanges || state.isUploading)
+                    
+                    Button("Upload") {
+                        uploadAction()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(!canEdit || !state.hasChanges || state.isUploading)
                 }
-                .buttonStyle(.bordered)
-                .disabled(!canEdit || !state.hasChanges || state.isUploading)
                 
-                Button("Upload") {
-                    uploadAction()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .disabled(!canEdit || !state.hasChanges || state.isUploading)
-                
-                Text(state.statusDescription)
-                    .font(.caption)
-                    .foregroundStyle(state.statusColor)
+                StatusIndicator(status: state.uploadStatus)
             }
             
-            ReleaseEditor(text: $state.text)
-                .disabled(!canEdit || state.isUploading)
-                .onChange(of: state.text) { _, newValue in
-                    guard canEdit, state.uploadStatus != .uploading else { return }
-                    if newValue == state.originalText {
-                        state.uploadStatus = .idle
-                    } else {
-                        state.uploadStatus = .pendingChanges
-                    }
+            ReleaseEditor(
+                text: $state.text,
+                isEditable: canEdit && !state.isUploading
+            )
+            .onChange(of: state.text) { _, newValue in
+                guard canEdit, state.uploadStatus != .uploading else { return }
+                if newValue == state.originalText {
+                    state.uploadStatus = .idle
+                } else {
+                    state.uploadStatus = .pendingChanges
                 }
+            }
+        }
+    }
+}
+
+private struct StatusIndicator: View {
+    let status: UploadState
+    
+    @ViewBuilder
+    var body: some View {
+        switch status {
+        case .uploading:
+            ProgressView()
+                .scaleEffect(0.7)
+                .frame(width: 18, height: 18)
+        case .idle:
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+        case .pendingChanges:
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.orange)
+                .frame(width: 18, height: 18)
+        case .success:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .frame(width: 18, height: 18)
+        case .failure:
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.red)
+                .frame(width: 18, height: 18)
         }
     }
 }
@@ -460,14 +534,14 @@ struct LocalizedReleaseNoteView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             } else {
                 Text("No release notes available in this language.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -532,37 +606,6 @@ private struct LocaleEditorState: Identifiable {
         uploadStatus == .uploading
     }
     
-    var statusDescription: String {
-        switch uploadStatus {
-        case .idle:
-            return "No changes"
-        case .pendingChanges:
-            return "Pending upload"
-        case .uploading:
-            return "Uploading..."
-        case .success(let date):
-            let relative = UploadState.relativeFormatter.localizedString(for: date, relativeTo: Date())
-            return "Uploaded \(relative)"
-        case .failure(let message):
-            return "Failed: \(message)"
-        }
-    }
-    
-    var statusColor: Color {
-        switch uploadStatus {
-        case .idle:
-            return .secondary
-        case .pendingChanges:
-            return .orange
-        case .uploading:
-            return .blue
-        case .success:
-            return .green
-        case .failure:
-            return .red
-        }
-    }
-    
     init(note: LocalizedReleaseNote) {
         self.id = note.id
         self.locale = note.locale
@@ -576,12 +619,21 @@ private enum UploadState: Equatable {
     case idle
     case pendingChanges
     case uploading
-    case success(Date)
+    case success
     case failure(String)
     
-    static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
+    var accessibilityDescription: String {
+        switch self {
+        case .idle:
+            return "No changes"
+        case .pendingChanges:
+            return "Pending upload"
+        case .uploading:
+            return "Uploading"
+        case .success:
+            return "Upload successful"
+        case .failure(let message):
+            return "Upload failed: \(message)"
+        }
+    }
 }

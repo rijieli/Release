@@ -104,7 +104,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
                     
                     Spacer()
                 }

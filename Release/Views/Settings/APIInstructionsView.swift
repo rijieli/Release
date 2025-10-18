@@ -63,7 +63,7 @@ struct APIInstructionsView: View {
                     )
                 }
                 .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
                 
                 // Additional Info
                 VStack(alignment: .leading, spacing: 12) {
@@ -102,7 +102,7 @@ struct APIInstructionsView: View {
                     .maxWidth(alignment: .leading)
                 }
                 .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             }
             .padding(.vertical, 20)
             .padding(.horizontal, 12)
