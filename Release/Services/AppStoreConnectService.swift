@@ -23,6 +23,20 @@ class AppStoreConnectService: ObservableObject {
     private var loadingBasicDetailAppIDs: Set<String> = []
     private var loadedBasicDetailAppIDs: Set<String> = []
     
+    enum ServiceError: LocalizedError {
+        case notConfigured
+        case missingLocalization
+        
+        var errorDescription: String? {
+            switch self {
+            case .notConfigured:
+                return "API not configured. Please check your settings."
+            case .missingLocalization:
+                return "Unable to find the targeted localization."
+            }
+        }
+    }
+    
     private init() {}
     
     func configure(issuerID: String, privateKeyID: String, privateKey: String) {
@@ -343,11 +357,11 @@ class AppStoreConnectService: ObservableObject {
             
             let versionsResponse = try await provider.request(versionsRequest)
             
-            // Get release notes for the latest version
+            // Get release notes for available versions (most recent first)
             var releaseNotes: [ReleaseNote] = []
             
-            if let latestVersion = versionsResponse.data.first {
-                let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(latestVersion.id).appStoreVersionLocalizations.get(parameters: .init(
+            for version in versionsResponse.data {
+                let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(version.id).appStoreVersionLocalizations.get(parameters: .init(
                     fieldsAppStoreVersionLocalizations: [.locale, .whatsNew]
                 ))
                 
@@ -365,14 +379,15 @@ class AppStoreConnectService: ObservableObject {
                     
                     if !localizedNotes.isEmpty {
                         let releaseNote = ReleaseNote(
-                            id: latestVersion.id,
-                            version: latestVersion.attributes?.versionString ?? "Unknown",
-                            localizedNotes: localizedNotes
+                            id: version.id,
+                            version: version.attributes?.versionString ?? "Unknown",
+                            localizedNotes: localizedNotes,
+                            releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
                         )
                         releaseNotes.append(releaseNote)
                     }
                 } catch {
-                    // Silently continue if release notes fetch fails
+                    log.warning("⚠️ Failed to load release notes for version \(version.id): \(error.localizedDescription)")
                 }
             }
             
@@ -411,5 +426,77 @@ class AppStoreConnectService: ObservableObject {
                 self.isLoadingDetail = false
             }
         }
+    }
+}
+
+extension AppStoreConnectService {
+    func updateReleaseNotes(localizationId: String, whatsNew: String) async throws -> LocalizedReleaseNote {
+        guard let configuration = configuration else {
+            throw ServiceError.notConfigured
+        }
+        
+        let provider = APIProvider(configuration: configuration)
+        let body = AppStoreVersionLocalizationUpdateRequest(
+            data: .init(
+                type: .appStoreVersionLocalizations,
+                id: localizationId,
+                attributes: .init(whatsNew: whatsNew)
+            )
+        )
+        
+        let response = try await provider.request(
+            APIEndpoint.v1.appStoreVersionLocalizations
+                .id(localizationId)
+                .patch(body)
+        )
+        
+        guard let attributes = response.data.attributes else {
+            throw ServiceError.missingLocalization
+        }
+        
+        let updatedNote = LocalizedReleaseNote(
+            id: response.data.id,
+            locale: attributes.locale ?? "en",
+            notes: attributes.whatsNew ?? "",
+            whatsNew: attributes.whatsNew
+        )
+        
+        await MainActor.run {
+            guard let detail = self.appDetail else { return }
+            var updatedReleaseNotes = detail.releaseNotes
+            
+            if let index = updatedReleaseNotes.firstIndex(where: { note in
+                note.localizedNotes.contains(where: { $0.id == localizationId })
+            }) {
+                let note = updatedReleaseNotes[index]
+                var localized = note.localizedNotes
+                
+                if let localizationIndex = localized.firstIndex(where: { $0.id == localizationId }) {
+                    localized[localizationIndex] = updatedNote
+                    let updatedReleaseNote = ReleaseNote(
+                        id: note.id,
+                        version: note.version,
+                        localizedNotes: localized,
+                        releaseDate: note.releaseDate
+                    )
+                    updatedReleaseNotes[index] = updatedReleaseNote
+                    
+                    self.appDetail = AppDetail(
+                        id: detail.id,
+                        name: detail.name,
+                        bundleID: detail.bundleID,
+                        platform: detail.platform,
+                        status: detail.status,
+                        version: detail.version,
+                        lastModified: detail.lastModified,
+                        sku: detail.sku,
+                        primaryLanguage: detail.primaryLanguage,
+                        releaseNotes: updatedReleaseNotes
+                    )
+                }
+            }
+        }
+        
+        return updatedNote
     }
 }

@@ -6,17 +6,56 @@
 //
 
 import SwiftUI
+import Foundation
 import AppStoreConnect_Swift_SDK
 
 struct ReleaseNotesTab: View {
     let appDetail: AppDetail
     
+    @StateObject private var apiService = AppStoreConnectService.shared
+    
+    @State private var editorStates: [LocaleEditorState]
+    @State private var templateText: String
+    @State private var isFetchingPreviousVersion: Bool = false
+    @State private var pendingUploadLocaleID: String?
+    @State private var showUploadConfirmation: Bool = false
+    @State private var showUploadAllConfirmation: Bool = false
+    @State private var alertMessage: String?
+    
+    private var isEditable: Bool {
+        appDetail.status == .prepareForSubmission
+    }
+    
+    private var editableReleaseNote: ReleaseNote? {
+        appDetail.releaseNotes.first
+    }
+    
+    private var hasPendingChanges: Bool {
+        editorStates.contains(where: { $0.hasChanges })
+    }
+    
+    private var hasPreviousVersion: Bool {
+        appDetail.releaseNotes.count > 1
+    }
+    
+    init(appDetail: AppDetail) {
+        self.appDetail = appDetail
+        if let latest = appDetail.releaseNotes.first {
+            _editorStates = State(initialValue: latest.localizedNotes.map { LocaleEditorState(note: $0) })
+        } else {
+            _editorStates = State(initialValue: [])
+        }
+        _templateText = State(initialValue: "")
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            if appDetail.releaseNotes.isEmpty {
+            if isEditable, let editableReleaseNote {
+                editableContent(for: editableReleaseNote)
+                    .controlSize(.large)
+            } else if appDetail.releaseNotes.isEmpty {
                 EmptyReleaseNotesView()
             } else {
-                // Release notes content - show all languages
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 20) {
                         ForEach(appDetail.releaseNotes) { releaseNote in
@@ -27,6 +66,241 @@ struct ReleaseNotesTab: View {
                 }
             }
         }
+        .onChange(of: appDetail.releaseNotes) { _, newValue in
+            guard let latest = newValue.first else {
+                editorStates = []
+                return
+            }
+            editorStates = latest.localizedNotes.map { LocaleEditorState(note: $0) }
+            templateText = ""
+        }
+        .confirmationDialog("Confirm Upload", isPresented: $showUploadConfirmation, titleVisibility: .visible) {
+            Button("Upload") {
+                if let localeID = pendingUploadLocaleID {
+                    Task {
+                        await uploadLocale(withId: localeID)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingUploadLocaleID = nil
+            }
+        } message: {
+            Text("Are you sure you want to upload the selected release notes?")
+        }
+        .confirmationDialog("Confirm Upload All", isPresented: $showUploadAllConfirmation, titleVisibility: .visible) {
+            Button("Upload All") {
+                Task {
+                    await uploadAll()
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Upload all release notes to App Store Connect?")
+        }
+        .alert("Upload Error", isPresented: Binding(get: { alertMessage != nil }, set: { isPresented in
+            if !isPresented { alertMessage = nil }
+        })) {
+            Button("OK", role: .cancel) {
+                alertMessage = nil
+            }
+        } message: {
+            if let alertMessage = alertMessage {
+                Text(alertMessage)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func editableContent(for releaseNote: ReleaseNote) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                editableHeader(for: releaseNote)
+                
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach($editorStates) { $state in
+                        EditableLocalizedReleaseNoteView(
+                            state: $state,
+                            canEdit: isEditable,
+                            resetAction: { reset(localeID: state.id) },
+                            uploadAction: { prepareUpload(localeID: state.id) }
+                        )
+                    }
+                }
+                
+                if appDetail.releaseNotes.count > 1 {
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Previous Versions")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        
+                        ForEach(appDetail.releaseNotes.dropFirst()) { previousNote in
+                            ReleaseNoteCard(releaseNote: previousNote)
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+    
+    @ViewBuilder
+    private func editableHeader(for releaseNote: ReleaseNote) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Version \(releaseNote.version)")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if let releaseDate = releaseNote.releaseDate {
+                    Text("Last updated \(DateFormatter.releaseDate.string(from: releaseDate))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Template")
+                    .font(.headline)
+                
+                ReleaseEditor(text: $templateText)
+                
+                HStack(spacing: 12) {
+                    Button("Apply All") {
+                        applyTemplateToAll()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(templateText.isEmpty)
+                    
+                    Button("Reset All") {
+                        resetAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!hasPendingChanges)
+                    
+                    Button("Upload All") {
+                        showUploadAllConfirmation = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(!hasPendingChanges)
+                    
+                    Button("Fetch Previous Versions") {
+                        Task { await fetchPreviousVersionNotes() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isFetchingPreviousVersion || !hasPreviousVersion)
+                    
+                    Spacer()
+                    
+                    if isFetchingPreviousVersion {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func applyTemplateToAll() {
+        guard !templateText.isEmpty else { return }
+        for index in editorStates.indices {
+            if editorStates[index].text != templateText {
+                editorStates[index].text = templateText
+                editorStates[index].uploadStatus = .pendingChanges
+            }
+        }
+    }
+    
+    private func resetAll() {
+        for index in editorStates.indices {
+            editorStates[index].text = editorStates[index].originalText
+            editorStates[index].uploadStatus = .idle
+        }
+    }
+    
+    private func reset(localeID: String) {
+        guard let index = editorStates.firstIndex(where: { $0.id == localeID }) else { return }
+        editorStates[index].text = editorStates[index].originalText
+        editorStates[index].uploadStatus = .idle
+    }
+    
+    private func prepareUpload(localeID: String) {
+        pendingUploadLocaleID = localeID
+        showUploadConfirmation = true
+    }
+    
+    private func uploadLocale(withId localeID: String) async {
+        guard let index = editorStates.firstIndex(where: { $0.id == localeID }) else { return }
+        guard editorStates[index].hasChanges else {
+            await MainActor.run {
+                pendingUploadLocaleID = nil
+            }
+            return
+        }
+        
+        let newText = editorStates[index].text
+        
+        await MainActor.run {
+            editorStates[index].uploadStatus = .uploading
+        }
+        
+        do {
+            let updatedNote = try await apiService.updateReleaseNotes(localizationId: localeID, whatsNew: newText)
+            let successDate = Date()
+            await MainActor.run {
+                editorStates[index].text = updatedNote.notes
+                editorStates[index].originalText = updatedNote.notes
+                editorStates[index].uploadStatus = .success(successDate)
+            }
+        } catch {
+            await MainActor.run {
+                editorStates[index].uploadStatus = .failure(error.localizedDescription)
+                alertMessage = error.localizedDescription
+            }
+        }
+        
+        await MainActor.run {
+            pendingUploadLocaleID = nil
+        }
+    }
+    
+    private func uploadAll() async {
+        for state in editorStates where state.hasChanges {
+            await uploadLocale(withId: state.id)
+        }
+        await MainActor.run {
+            showUploadAllConfirmation = false
+        }
+    }
+    
+    private func fetchPreviousVersionNotes() async {
+        guard !isFetchingPreviousVersion else { return }
+        let releaseNotes = apiService.appDetail?.releaseNotes ?? appDetail.releaseNotes
+        guard releaseNotes.count > 1 else { return }
+        
+        await MainActor.run {
+            isFetchingPreviousVersion = true
+        }
+        
+        let previous = releaseNotes.dropFirst().first
+        let previousNotesByLocale = previous.map { Dictionary(uniqueKeysWithValues: $0.localizedNotes.map { ($0.locale, $0.notes) }) } ?? [:]
+        
+        await MainActor.run {
+            for index in editorStates.indices {
+                if let previousNote = previousNotesByLocale[editorStates[index].locale], editorStates[index].text != previousNote {
+                    editorStates[index].text = previousNote
+                    editorStates[index].uploadStatus = .pendingChanges
+                }
+            }
+            templateText = previous?.localizedNotes.first?.notes ?? ""
+            isFetchingPreviousVersion = false
+        }
     }
 }
 
@@ -35,7 +309,6 @@ struct ReleaseNoteCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Version header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Version \(releaseNote.version)")
@@ -51,7 +324,6 @@ struct ReleaseNoteCard: View {
                 
                 Spacer()
                 
-                // Language indicator
                 if releaseNote.localizedNotes.count > 1 {
                     HStack(spacing: 4) {
                         Image(systemName: "globe")
@@ -62,7 +334,6 @@ struct ReleaseNoteCard: View {
                 }
             }
             
-            // All localized release notes
             if releaseNote.localizedNotes.isEmpty {
                 Text("No release notes available.")
                     .font(.body)
@@ -83,12 +354,86 @@ struct ReleaseNoteCard: View {
     }
 }
 
+private struct ReleaseEditor: View {
+    @Binding var text: String
+    var body: some View {
+        TextEditor(text: $text)
+            .frame(height: 100)
+            .padding(8)
+            .background(.white, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.secondary.opacity(0.3))
+            )
+            .scrollContentBackground(.hidden)
+    }
+}
+
+private struct EditableLocalizedReleaseNoteView: View {
+    @Binding var state: LocaleEditorState
+    
+    let canEdit: Bool
+    let resetAction: () -> Void
+    let uploadAction: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "globe")
+                    .foregroundStyle(.blue)
+                    .font(.caption)
+                
+                Text(state.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                
+                Text(state.locale)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.secondary.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                
+                Spacer()
+                
+                Button("Reset") {
+                    resetAction()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canEdit || !state.hasChanges || state.isUploading)
+                
+                Button("Upload") {
+                    uploadAction()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(!canEdit || !state.hasChanges || state.isUploading)
+                
+                Text(state.statusDescription)
+                    .font(.caption)
+                    .foregroundStyle(state.statusColor)
+            }
+            
+            ReleaseEditor(text: $state.text)
+                .disabled(!canEdit || state.isUploading)
+                .onChange(of: state.text) { _, newValue in
+                    guard canEdit, state.uploadStatus != .uploading else { return }
+                    if newValue == state.originalText {
+                        state.uploadStatus = .idle
+                    } else {
+                        state.uploadStatus = .pendingChanges
+                    }
+                }
+        }
+    }
+}
+
 struct LocalizedReleaseNoteView: View {
     let localizedNote: LocalizedReleaseNote
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Language header
             HStack {
                 Image(systemName: "globe")
                     .foregroundStyle(.blue)
@@ -109,7 +454,6 @@ struct LocalizedReleaseNoteView: View {
                     .background(.secondary.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
             }
             
-            // Release notes content
             if !localizedNote.notes.isEmpty {
                 Text(localizedNote.notes)
                     .font(.body)
@@ -166,6 +510,78 @@ extension DateFormatter {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
+        return formatter
+    }()
+}
+
+// MARK: - Supporting Models
+
+private struct LocaleEditorState: Identifiable {
+    let id: String
+    let locale: String
+    let displayName: String
+    var originalText: String
+    var text: String
+    var uploadStatus: UploadState = .idle
+    
+    var hasChanges: Bool {
+        text != originalText
+    }
+    
+    var isUploading: Bool {
+        uploadStatus == .uploading
+    }
+    
+    var statusDescription: String {
+        switch uploadStatus {
+        case .idle:
+            return "No changes"
+        case .pendingChanges:
+            return "Pending upload"
+        case .uploading:
+            return "Uploading..."
+        case .success(let date):
+            let relative = UploadState.relativeFormatter.localizedString(for: date, relativeTo: Date())
+            return "Uploaded \(relative)"
+        case .failure(let message):
+            return "Failed: \(message)"
+        }
+    }
+    
+    var statusColor: Color {
+        switch uploadStatus {
+        case .idle:
+            return .secondary
+        case .pendingChanges:
+            return .orange
+        case .uploading:
+            return .blue
+        case .success:
+            return .green
+        case .failure:
+            return .red
+        }
+    }
+    
+    init(note: LocalizedReleaseNote) {
+        self.id = note.id
+        self.locale = note.locale
+        self.displayName = note.displayName
+        self.originalText = note.notes
+        self.text = note.notes
+    }
+}
+
+private enum UploadState: Equatable {
+    case idle
+    case pendingChanges
+    case uploading
+    case success(Date)
+    case failure(String)
+    
+    static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
         return formatter
     }()
 }

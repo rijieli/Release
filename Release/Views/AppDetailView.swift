@@ -11,19 +11,23 @@ import SwiftUI
 struct AppDetailView: View {
     let appInfo: AppInfo
     @StateObject private var apiService = AppStoreConnectService.shared
-    @State private var selectedTab: DetailTab = .releaseNotes
+    @State private var selectedTab: DetailTab = .basicInfo
     @Environment(\.openURL) private var openURL
 
-    private var displayedAppInfo: AppInfo {
-        if let detail = apiService.appDetail, detail.id == appInfo.id {
-            return detail.asAppInfo
-        }
-        return appInfo
+    private var activeDetail: AppDetail? {
+        guard let detail = apiService.appDetail, detail.id == appInfo.id else { return nil }
+        return detail
     }
-
+    
+    private var currentName: String { activeDetail?.name ?? appInfo.name }
+    private var currentBundleID: String { activeDetail?.bundleID ?? appInfo.bundleID }
+    private var currentPlatform: Platform { activeDetail?.platform ?? appInfo.platform }
+    private var currentStatus: AppStatus { activeDetail?.status ?? appInfo.status }
+    private var currentAppID: String { activeDetail?.id ?? appInfo.id }
+    
     private var appStoreURL: URL? {
-        guard displayedAppInfo.id.allSatisfy(\.isNumber) else { return nil }
-        return URL(string: "https://apps.apple.com/us/app/id\(displayedAppInfo.id)")
+        guard currentAppID.allSatisfy(\.isNumber) else { return nil }
+        return URL(string: "https://apps.apple.com/us/app/id\(currentAppID)")
     }
 
     var body: some View {
@@ -78,40 +82,40 @@ struct AppDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             // App icon
             AppIconView(
-                appId: displayedAppInfo.id,
-                bundleID: displayedAppInfo.bundleID,
-                platform: displayedAppInfo.platform,
+                appId: currentAppID,
+                bundleID: currentBundleID,
+                platform: currentPlatform,
                 size: 80
             )
             .frame(width: 80, height: 80)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(displayedAppInfo.name)
+                Text(currentName)
                     .font(.title2)
                     .fontWeight(.semibold)
                     .lineLimit(2)
                 
-                Text(displayedAppInfo.bundleID)
+                Text(currentBundleID)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 
-                Text("App ID: \(displayedAppInfo.id)")
+                Text("App ID: \(currentAppID)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
-                    Image(systemName: displayedAppInfo.platform.systemImage)
+                    Image(systemName: currentPlatform.systemImage)
                         .foregroundStyle(.blue)
-                    Text(displayedAppInfo.platform.rawValue)
+                    Text(currentPlatform.rawValue)
                         .font(.caption)
                 }
                 
                 HStack(spacing: 8) {
-                    Image(systemName: displayedAppInfo.status.systemImage)
-                        .foregroundStyle(displayedAppInfo.status.color)
-                    Text(displayedAppInfo.status.description)
+                    Image(systemName: currentStatus.systemImage)
+                        .foregroundStyle(currentStatus.color)
+                    Text(currentStatus.description)
                         .font(.caption)
                 }
                 
