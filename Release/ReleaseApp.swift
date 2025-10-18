@@ -17,6 +17,7 @@ struct ReleaseApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Release") {
@@ -46,6 +47,7 @@ struct ReleaseApp: App {
         
         Settings {
             SettingsView()
+                .frame(width: 600, height: 400)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)

@@ -37,10 +37,30 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             // Sidebar with platform filter
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Platforms")
                     .font(.headline)
                     .foregroundStyle(.secondary)
+                
+                Button {
+                    selectedPlatform = nil
+                } label: {
+                    HStack {
+                        Image(systemName: "square.grid.2x2")
+                            .foregroundStyle(selectedPlatform == nil ? .white : .primary)
+                        Text("All")
+                            .foregroundStyle(selectedPlatform == nil ? .white : .primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(selectedPlatform == nil ? Color.accentColor : Color.clear)
+                    )
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
                 
                 ForEach(Platform.allCases) { platform in
                     Button(action: {
@@ -52,17 +72,14 @@ struct ContentView: View {
                             Text(platform.rawValue)
                                 .foregroundStyle(selectedPlatform == platform ? .white : .primary)
                             Spacer()
-                            if selectedPlatform == platform {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.white)
-                            }
                         }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 16)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(selectedPlatform == platform ? Color.accentColor : Color.clear)
                         )
+                        .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                 }
@@ -73,9 +90,8 @@ struct ContentView: View {
             .frame(minWidth: 200)
         } detail: {
             VStack(spacing: 0) {
-                // Modern toolbar
-                HStack {
-                    // Search field with modern styling
+                // Compact toolbar with inline search
+                HStack(spacing: 12) {
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
@@ -86,31 +102,14 @@ struct ContentView: View {
                                 // Handle search submission if needed
                             }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                     
                     Spacer()
-                    
-                    // Action buttons
-                    HStack(spacing: 8) {
-                        Button(action: {
-                            Task {
-                                await apiService.loadApps()
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(apiService.isLoading)
-                        
-                        SettingsLink {
-                            Image(systemName: "gear")
-                        }
-                        .buttonStyle(.bordered)
-                    }
                 }
-                .padding()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(.regularMaterial)
                 
                 Divider()
@@ -131,6 +130,22 @@ struct ContentView: View {
         }
         .navigationTitle("App Store Connect")
         .navigationSubtitle(settingsManager.isConfigured ? "\(apiService.apps.count) apps" : "Not configured")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    Task {
+                        await apiService.loadApps()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(apiService.isLoading)
+                
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                }
+            }
+        }
         .onAppear {
             if settingsManager.isConfigured {
                 apiService.configure(
@@ -187,7 +202,6 @@ struct ConfigurationRequiredView: View {
                 Text("Open Settings")
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -296,7 +310,6 @@ struct AppsTableView: View {
                     openWindow(id: "app-detail")
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
             }
             .width(80)
         }
