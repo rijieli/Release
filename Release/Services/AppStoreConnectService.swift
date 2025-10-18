@@ -170,10 +170,15 @@ class AppStoreConnectService: ObservableObject {
             
             let response = appsResponse
             
+            // Fetch app icons in parallel
+            let bundleIDs = response.data.compactMap { $0.attributes?.bundleID }
+            let iconURLs = await iTunesService.shared.fetchAppIcons(for: bundleIDs)
+            
             let appInfos = response.data.map { app in
                 let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
                 let status = statusMap[app.id] ?? .prepareForSubmission
                 let version = versionMap[app.id]
+                let iconURL = app.attributes?.bundleID.flatMap { iconURLs[$0] }
                 
                 return AppInfo(
                     id: app.id,
@@ -181,7 +186,8 @@ class AppStoreConnectService: ObservableObject {
                     bundleID: app.attributes?.bundleID ?? "",
                     platform: platform,
                     status: status,
-                    version: version
+                    version: version,
+                    iconURL: iconURL
                 )
             }
             
@@ -313,6 +319,9 @@ class AppStoreConnectService: ObservableObject {
             
             // Create AppDetail
             let app = appResponse.data
+            
+            // Fetch app icon
+            let iconURL = await iTunesService.shared.fetchAppIcon(for: app.attributes?.bundleID ?? "")
             let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
             let status: AppStatus
             
@@ -331,7 +340,8 @@ class AppStoreConnectService: ObservableObject {
                 version: versionsResponse.data.first?.attributes?.versionString,
                 sku: app.attributes?.sku,
                 primaryLanguage: app.attributes?.primaryLocale,
-                releaseNotes: releaseNotes
+                releaseNotes: releaseNotes,
+                iconURL: iconURL
             )
             
             await MainActor.run {

@@ -17,15 +17,8 @@ struct AppDetailView: View {
         NavigationSplitView {
             // Sidebar with app info
             VStack(alignment: .leading, spacing: 16) {
-                // App icon placeholder
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.regularMaterial)
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Image(systemName: appInfo.platform.systemImage)
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
-                    )
+                // App icon
+                AppIconView(iconURL: appInfo.iconURL, platform: appInfo.platform, size: 80)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(appInfo.name)

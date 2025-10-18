@@ -255,9 +255,7 @@ struct AppsTableView: View {
         Table(apps, sortOrder: $sortOrder) {
             TableColumn("App", value: \.name) { app in
                 HStack(spacing: 12) {
-                    Image(systemName: app.platform.systemImage)
-                        .foregroundStyle(.blue)
-                        .frame(width: 24)
+                    AppIconView(iconURL: app.iconURL, platform: app.platform, size: 32)
                         .symbolEffect(.bounce, value: app.status)
                     
                     VStack(alignment: .leading, spacing: 4) {

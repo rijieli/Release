@@ -18,8 +18,9 @@ struct AppDetail: Identifiable {
     let sku: String?
     let primaryLanguage: String?
     let releaseNotes: [ReleaseNote]
+    let iconURL: String?
     
-    init(id: String, name: String, bundleID: String, platform: Platform, status: AppStatus, version: String? = nil, lastModified: Date? = nil, sku: String? = nil, primaryLanguage: String? = nil, releaseNotes: [ReleaseNote] = []) {
+    init(id: String, name: String, bundleID: String, platform: Platform, status: AppStatus, version: String? = nil, lastModified: Date? = nil, sku: String? = nil, primaryLanguage: String? = nil, releaseNotes: [ReleaseNote] = [], iconURL: String? = nil) {
         self.id = id
         self.name = name
         self.bundleID = bundleID
@@ -30,5 +31,6 @@ struct AppDetail: Identifiable {
         self.sku = sku
         self.primaryLanguage = primaryLanguage
         self.releaseNotes = releaseNotes
+        self.iconURL = iconURL
     }
 }

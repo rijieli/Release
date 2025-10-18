@@ -17,8 +17,9 @@ struct AppInfo: Identifiable, Hashable {
     let status: AppStatus
     let version: String?
     let lastModified: Date?
+    let iconURL: String?
     
-    init(id: String, name: String, bundleID: String, platform: Platform, status: AppStatus, version: String? = nil, lastModified: Date? = nil) {
+    init(id: String, name: String, bundleID: String, platform: Platform, status: AppStatus, version: String? = nil, lastModified: Date? = nil, iconURL: String? = nil) {
         self.id = id
         self.name = name
         self.bundleID = bundleID
@@ -26,6 +27,7 @@ struct AppInfo: Identifiable, Hashable {
         self.status = status
         self.version = version
         self.lastModified = lastModified
+        self.iconURL = iconURL
     }
 }
 

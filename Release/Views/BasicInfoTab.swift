@@ -14,6 +14,37 @@ struct BasicInfoTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // App Icon Section
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("App Icon")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    HStack(spacing: 16) {
+                        AppIconView(iconURL: appDetail.iconURL, platform: appDetail.platform, size: 80)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(appDetail.name)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                            
+                            Text(appDetail.bundleID)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            if appDetail.iconURL == nil {
+                                Text("Icon not available")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                
                 // App Information Section
                 VStack(alignment: .leading, spacing: 16) {
                     Text("App Information")
