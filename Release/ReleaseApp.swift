@@ -40,6 +40,7 @@ struct ReleaseApp: App {
             } else {
                 Text("No app selected")
                     .foregroundStyle(.secondary)
+                    .frame(minWidth: 600, minHeight: 400)
             }
         }
         .windowResizability(.contentSize)

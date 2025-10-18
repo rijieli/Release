@@ -17,12 +17,6 @@ struct AppInfo: Identifiable, Hashable {
     let status: AppStatus
     let version: String?
     let lastModified: Date?
-    let iconURL: String?
-    
-    // Additional fields for detailed view
-    let sku: String?
-    let primaryLanguage: String?
-    let releaseNotes: [ReleaseNote]
     
     init(
         id: String,
@@ -31,11 +25,7 @@ struct AppInfo: Identifiable, Hashable {
         platform: Platform,
         status: AppStatus,
         version: String? = nil,
-        lastModified: Date? = nil,
-        iconURL: String? = nil,
-        sku: String? = nil,
-        primaryLanguage: String? = nil,
-        releaseNotes: [ReleaseNote] = []
+        lastModified: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -44,12 +34,7 @@ struct AppInfo: Identifiable, Hashable {
         self.status = status
         self.version = version
         self.lastModified = lastModified
-        self.iconURL = iconURL
-        self.sku = sku
-        self.primaryLanguage = primaryLanguage
-        self.releaseNotes = releaseNotes
     }
-    
 }
 
 enum Platform: String, CaseIterable, Identifiable, Comparable {
@@ -57,6 +42,7 @@ enum Platform: String, CaseIterable, Identifiable, Comparable {
     case macos = "macOS"
     case tvos = "tvOS"
     case watchos = "watchOS"
+    case visionos = "visionOS"
     
     var id: String { rawValue }
     
@@ -66,6 +52,7 @@ enum Platform: String, CaseIterable, Identifiable, Comparable {
         case .macos: return "laptopcomputer"
         case .tvos: return "tv"
         case .watchos: return "applewatch"
+        case .visionos: return "visionpro"
         }
     }
     

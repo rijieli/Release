@@ -18,7 +18,7 @@ struct AppDetailView: View {
             // Sidebar with app info
             VStack(alignment: .leading, spacing: 16) {
                 // App icon
-                AppIconView(iconURL: appInfo.iconURL, platform: appInfo.platform, size: 80)
+                AppIconView(appId: appInfo.id, bundleID: appInfo.bundleID, platform: appInfo.platform, size: 80)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(appInfo.name)
@@ -83,6 +83,7 @@ struct AppDetailView: View {
         }
         .navigationTitle("App Details")
         .navigationSubtitle(appInfo.name)
+        .frame(minWidth: 800, minHeight: 600)
         .onAppear {
             Task {
                 await apiService.loadAppDetail(for: appInfo.id)

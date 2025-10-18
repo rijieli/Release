@@ -16,10 +16,12 @@ class AppStoreConnectService: ObservableObject {
     @Published var apps: [AppInfo] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
-    @Published var appDetail: AppInfo?
+    @Published var appDetail: AppDetail?
     @Published var isLoadingDetail: Bool = false
     
     private var configuration: APIConfiguration?
+    private var loadingBasicDetailAppIDs: Set<String> = []
+    private var loadedBasicDetailAppIDs: Set<String> = []
     
     private init() {}
     
@@ -113,6 +115,8 @@ class AppStoreConnectService: ObservableObject {
     }
     
     func loadApps() async {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        
         guard let configuration = configuration else {
             await MainActor.run {
                 errorMessage = "API not configured. Please check your settings."
@@ -123,6 +127,8 @@ class AppStoreConnectService: ObservableObject {
         await MainActor.run {
             isLoading = true
             errorMessage = nil
+            loadingBasicDetailAppIDs.removeAll()
+            loadedBasicDetailAppIDs.removeAll()
         }
         
         do {
@@ -136,58 +142,17 @@ class AppStoreConnectService: ObservableObject {
             
             let appsResponse = try await provider.request(appsRequest)
             
-            // Then get app store versions for each app
-            var versionMap: [String: String] = [:]
-            var statusMap: [String: AppStatus] = [:]
-            
-            for app in appsResponse.data {
-                do {
-                    let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
-                        fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
-                        limit: 1
-                    ))
-                    
-                    let versionsResponse = try await provider.request(versionsRequest)
-                    
-                    // Get the latest version (sorted by version string descending)
-                    if let latestVersion = versionsResponse.data.first {
-                        if let versionString = latestVersion.attributes?.versionString {
-                            versionMap[app.id] = versionString
-                        }
-                        
-                        // Determine status from app store state
-                        let status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
-                        statusMap[app.id] = status
-                    } else {
-                        // No app store version exists
-                        statusMap[app.id] = .prepareForSubmission
-                    }
-                } catch {
-                    // If we can't fetch versions, assume no version exists
-                    statusMap[app.id] = .prepareForSubmission
-                }
-            }
-            
-            let response = appsResponse
-            
-            // Fetch app icons in parallel
-            let bundleIDs = response.data.compactMap { $0.attributes?.bundleID }
-            let iconURLs = await iTunesService.shared.fetchAppIcons(for: bundleIDs)
-            
-            let appInfos = response.data.map { app in
+            // Create apps with basic info only (fast loading)
+            let appInfos = appsResponse.data.map { app in
                 let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
-                let status = statusMap[app.id] ?? .prepareForSubmission
-                let version = versionMap[app.id]
-                let iconURL = app.attributes?.bundleID.flatMap { iconURLs[$0] }
                 
                 return AppInfo(
                     id: app.id,
                     name: app.attributes?.name ?? "Unknown",
                     bundleID: app.attributes?.bundleID ?? "",
                     platform: platform,
-                    status: status,
-                    version: version,
-                    iconURL: iconURL
+                    status: .prepareForSubmission,
+                    version: nil
                 )
             }
             
@@ -196,7 +161,29 @@ class AppStoreConnectService: ObservableObject {
                 self.isLoading = false
             }
             
+            let totalTime = CFAbsoluteTimeGetCurrent() - startTime
+            log.debug("📱 Initial apps list loaded in \(String(format: "%.2f", totalTime))s (\(appInfos.count) apps)")
+            
+            Task.detached { [weak self] in
+                guard let self else { return }
+                let semaphore = AsyncSemaphore(value: 5)
+                
+                await withTaskGroup(of: Void.self) { group in
+                    for app in appInfos {
+                        group.addTask { [weak self] in
+                            guard let self else { return }
+                            await semaphore.acquire()
+                            await self.loadAppDetails(for: app)
+                            await semaphore.release()
+                        }
+                    }
+                }
+            }
+            
         } catch {
+            let totalTime = CFAbsoluteTimeGetCurrent() - startTime
+            log.error("❌ Failed to load apps after \(String(format: "%.2f", totalTime))s: \(error.localizedDescription)")
+            
             await MainActor.run {
                 self.errorMessage = "Failed to load apps: \(error.localizedDescription)"
                 self.isLoading = false
@@ -229,6 +216,8 @@ class AppStoreConnectService: ObservableObject {
             return .watchos
         } else if bundleID.contains("tv") {
             return .tvos
+        } else if bundleID.contains("vision") || bundleID.contains("xr") {
+            return .visionos
         } else if bundleID.contains("mac") || bundleID.hasSuffix(".mac") {
             return .macos
         } else {
@@ -249,7 +238,77 @@ class AppStoreConnectService: ObservableObject {
         return .prepareForSubmission
     }
     
+    
     // MARK: - App Detail Methods
+    
+    func loadAppDetails(for app: AppInfo) async {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        
+        let shouldLoad = await MainActor.run { () -> Bool in
+            if loadedBasicDetailAppIDs.contains(app.id) || loadingBasicDetailAppIDs.contains(app.id) {
+                return false
+            }
+            loadingBasicDetailAppIDs.insert(app.id)
+            return true
+        }
+        
+        guard shouldLoad else { return }
+        
+        defer {
+            Task { @MainActor in
+                loadingBasicDetailAppIDs.remove(app.id)
+            }
+        }
+        
+        guard let configuration = configuration else { return }
+        
+        do {
+            let provider = APIProvider(configuration: configuration)
+            
+            // Get app store versions for this specific app
+            let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
+                fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
+                limit: 1
+            ))
+            
+            let versionsResponse = try await provider.request(versionsRequest)
+            
+            // Update the app with refreshed status information
+            if let index = apps.firstIndex(where: { $0.id == app.id }) {
+                let status: AppStatus
+                let versionString: String?
+                
+                if let latestVersion = versionsResponse.data.first {
+                    status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
+                    versionString = latestVersion.attributes?.versionString
+                } else {
+                    status = .prepareForSubmission
+                    versionString = nil
+                }
+                
+                let updatedApp = AppInfo(
+                    id: app.id,
+                    name: app.name,
+                    bundleID: app.bundleID,
+                    platform: app.platform,
+                    status: status,
+                    version: versionString,
+                    lastModified: app.lastModified
+                )
+                
+                await MainActor.run {
+                    self.apps[index] = updatedApp
+                    self.loadedBasicDetailAppIDs.insert(app.id)
+                }
+                
+                let loadTime = CFAbsoluteTimeGetCurrent() - startTime
+                log.debug("📊 App details loaded for \(app.name) in \(String(format: "%.2f", loadTime))s")
+            }
+        } catch {
+            let loadTime = CFAbsoluteTimeGetCurrent() - startTime
+            log.warning("⚠️ Failed to load details for \(app.name) after \(String(format: "%.2f", loadTime))s")
+        }
+    }
     
     func loadAppDetail(for appId: String) async {
         guard let configuration = configuration else {
@@ -320,8 +379,6 @@ class AppStoreConnectService: ObservableObject {
             // Create AppDetail
             let app = appResponse.data
             
-            // Fetch app icon
-            let iconURL = await iTunesService.shared.fetchAppIcon(for: app.attributes?.bundleID ?? "")
             let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
             let status: AppStatus
             
@@ -331,14 +388,13 @@ class AppStoreConnectService: ObservableObject {
                 status = .prepareForSubmission
             }
             
-            let appDetail = AppInfo(
+            let appDetail = AppDetail(
                 id: app.id,
                 name: app.attributes?.name ?? "Unknown",
                 bundleID: app.attributes?.bundleID ?? "",
                 platform: platform,
                 status: status,
                 version: versionsResponse.data.first?.attributes?.versionString,
-                iconURL: iconURL,
                 sku: app.attributes?.sku,
                 primaryLanguage: app.attributes?.primaryLocale,
                 releaseNotes: releaseNotes

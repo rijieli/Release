@@ -9,7 +9,7 @@ import SwiftUI
 import AppStoreConnect_Swift_SDK
 
 struct BasicInfoTab: View {
-    let appDetail: AppInfo
+    let appDetail: AppDetail
     
     var body: some View {
         ScrollView {
@@ -21,7 +21,7 @@ struct BasicInfoTab: View {
                         .fontWeight(.semibold)
                     
                     HStack(spacing: 16) {
-                        AppIconView(iconURL: appDetail.iconURL, platform: appDetail.platform, size: 80)
+                        AppIconView(appId: appDetail.id, bundleID: appDetail.bundleID, platform: appDetail.platform, size: 80)
                         
                         VStack(alignment: .leading, spacing: 8) {
                             Text(appDetail.name)
@@ -32,11 +32,6 @@ struct BasicInfoTab: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             
-                            if appDetail.iconURL == nil {
-                                Text("Icon not available")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
                         }
                         
                         Spacer()
@@ -140,6 +135,8 @@ struct BasicInfoTab: View {
             return "tvOS - Apple TV applications"
         case .watchos:
             return "watchOS - Apple Watch applications"
+        case .visionos:
+            return "visionOS - Apple Vision Pro applications"
         }
     }
 }

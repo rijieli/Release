@@ -9,7 +9,7 @@ import SwiftUI
 import AppStoreConnect_Swift_SDK
 
 struct ReleaseNotesTab: View {
-    let appDetail: AppInfo
+    let appDetail: AppDetail
     
     var body: some View {
         VStack(spacing: 0) {

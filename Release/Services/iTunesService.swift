@@ -70,7 +70,6 @@ class iTunesService: ObservableObject {
             return iconURL
             
         } catch {
-            print("Failed to fetch app icon for \(bundleID): \(error)")
             return nil
         }
     }
