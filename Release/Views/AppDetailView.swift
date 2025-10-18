@@ -136,14 +136,3 @@ struct EmptyDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-
-#Preview {
-    AppDetailView(appInfo: AppInfo(
-        id: "123",
-        name: "Sample App",
-        bundleID: "com.example.app",
-        platform: .ios,
-        status: .readyForSale,
-        version: "1.0.0"
-    ))
-}

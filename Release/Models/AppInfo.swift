@@ -19,7 +19,24 @@ struct AppInfo: Identifiable, Hashable {
     let lastModified: Date?
     let iconURL: String?
     
-    init(id: String, name: String, bundleID: String, platform: Platform, status: AppStatus, version: String? = nil, lastModified: Date? = nil, iconURL: String? = nil) {
+    // Additional fields for detailed view
+    let sku: String?
+    let primaryLanguage: String?
+    let releaseNotes: [ReleaseNote]
+    
+    init(
+        id: String,
+        name: String,
+        bundleID: String,
+        platform: Platform,
+        status: AppStatus,
+        version: String? = nil,
+        lastModified: Date? = nil,
+        iconURL: String? = nil,
+        sku: String? = nil,
+        primaryLanguage: String? = nil,
+        releaseNotes: [ReleaseNote] = []
+    ) {
         self.id = id
         self.name = name
         self.bundleID = bundleID
@@ -28,7 +45,11 @@ struct AppInfo: Identifiable, Hashable {
         self.version = version
         self.lastModified = lastModified
         self.iconURL = iconURL
+        self.sku = sku
+        self.primaryLanguage = primaryLanguage
+        self.releaseNotes = releaseNotes
     }
+    
 }
 
 enum Platform: String, CaseIterable, Identifiable, Comparable {

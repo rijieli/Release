@@ -315,7 +315,3 @@ struct AppsTableView: View {
         .scrollContentBackground(.hidden)
     }
 }
-
-#Preview {
-    ContentView()
-}

@@ -9,7 +9,7 @@ import SwiftUI
 import AppStoreConnect_Swift_SDK
 
 struct BasicInfoTab: View {
-    let appDetail: AppDetail
+    let appDetail: AppInfo
     
     var body: some View {
         ScrollView {
@@ -175,17 +175,4 @@ extension DateFormatter {
         formatter.timeStyle = .short
         return formatter
     }()
-}
-
-#Preview {
-    BasicInfoTab(appDetail: AppDetail(
-        id: "123",
-        name: "Sample App",
-        bundleID: "com.example.app",
-        platform: .ios,
-        status: .readyForSale,
-        version: "1.0.0",
-        sku: "SAMPLE123",
-        primaryLanguage: "en"
-    ))
 }

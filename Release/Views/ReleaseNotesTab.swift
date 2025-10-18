@@ -9,7 +9,7 @@ import SwiftUI
 import AppStoreConnect_Swift_SDK
 
 struct ReleaseNotesTab: View {
-    let appDetail: AppDetail
+    let appDetail: AppInfo
     
     var body: some View {
         VStack(spacing: 0) {
@@ -168,33 +168,4 @@ extension DateFormatter {
         formatter.timeStyle = .none
         return formatter
     }()
-}
-
-#Preview {
-    ReleaseNotesTab(appDetail: AppDetail(
-        id: "123",
-        name: "Sample App",
-        bundleID: "com.example.app",
-        platform: .ios,
-        status: .readyForSale,
-        version: "1.0.0",
-        releaseNotes: [
-            ReleaseNote(
-                id: "1",
-                version: "1.0.0",
-                localizedNotes: [
-                    LocalizedReleaseNote(
-                        id: "1",
-                        locale: "en",
-                        notes: "• Bug fixes and performance improvements\n• New user interface\n• Enhanced security features"
-                    ),
-                    LocalizedReleaseNote(
-                        id: "2",
-                        locale: "zh-Hans",
-                        notes: "• 错误修复和性能改进\n• 新用户界面\n• 增强的安全功能"
-                    )
-                ]
-            )
-        ]
-    ))
 }

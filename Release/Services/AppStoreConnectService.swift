@@ -16,7 +16,7 @@ class AppStoreConnectService: ObservableObject {
     @Published var apps: [AppInfo] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
-    @Published var appDetail: AppDetail?
+    @Published var appDetail: AppInfo?
     @Published var isLoadingDetail: Bool = false
     
     private var configuration: APIConfiguration?
@@ -331,17 +331,17 @@ class AppStoreConnectService: ObservableObject {
                 status = .prepareForSubmission
             }
             
-            let appDetail = AppDetail(
+            let appDetail = AppInfo(
                 id: app.id,
                 name: app.attributes?.name ?? "Unknown",
                 bundleID: app.attributes?.bundleID ?? "",
                 platform: platform,
                 status: status,
                 version: versionsResponse.data.first?.attributes?.versionString,
+                iconURL: iconURL,
                 sku: app.attributes?.sku,
                 primaryLanguage: app.attributes?.primaryLocale,
-                releaseNotes: releaseNotes,
-                iconURL: iconURL
+                releaseNotes: releaseNotes
             )
             
             await MainActor.run {
