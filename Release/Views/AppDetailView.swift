@@ -21,7 +21,8 @@ struct AppDetailView: View {
     
     private var currentName: String { activeDetail?.name ?? appInfo.name }
     private var currentBundleID: String { activeDetail?.bundleID ?? appInfo.bundleID }
-    private var currentPlatform: Platform { activeDetail?.platform ?? appInfo.platform }
+    private var currentPlatforms: [Platform] { activeDetail?.platforms ?? appInfo.platforms }
+    private var primaryPlatform: Platform? { currentPlatforms.first }
     private var currentStatus: AppStatus { activeDetail?.status ?? appInfo.status }
     private var currentAppID: String { activeDetail?.id ?? appInfo.id }
     
@@ -84,7 +85,7 @@ struct AppDetailView: View {
             AppIconView(
                 appId: currentAppID,
                 bundleID: currentBundleID,
-                platform: currentPlatform,
+                platform: primaryPlatform,
                 size: 80
             )
             .frame(width: 80, height: 80)
@@ -105,11 +106,16 @@ struct AppDetailView: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                 
-                HStack(spacing: 8) {
-                    Image(systemName: currentPlatform.systemImage)
-                        .foregroundStyle(.blue)
-                    Text(currentPlatform.rawValue)
-                        .font(.caption)
+                if !currentPlatforms.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            ForEach(currentPlatforms) { platform in
+                                Image(systemName: platform.systemImage)
+                                    .foregroundStyle(.blue)
+                                    .accessibilityLabel(platform.displayName)
+                            }
+                        }
+                    }
                 }
                 
                 HStack(spacing: 8) {

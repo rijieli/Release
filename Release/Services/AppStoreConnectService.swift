@@ -158,13 +158,11 @@ class AppStoreConnectService: ObservableObject {
             
             // Create apps with basic info only (fast loading)
             let appInfos = appsResponse.data.map { app in
-                let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
-                
-                return AppInfo(
+                AppInfo(
                     id: app.id,
                     name: app.attributes?.name ?? "Unknown",
                     bundleID: app.attributes?.bundleID ?? "",
-                    platform: platform,
+                    platforms: [],
                     status: .prepareForSubmission,
                     version: nil
                 )
@@ -224,21 +222,6 @@ class AppStoreConnectService: ObservableObject {
         }
     }
     
-    private func determinePlatform(from bundleID: String) -> Platform {
-        // Simple heuristic based on bundle ID patterns
-        if bundleID.contains("watch") {
-            return .watchos
-        } else if bundleID.contains("tv") {
-            return .tvos
-        } else if bundleID.contains("vision") || bundleID.contains("xr") {
-            return .visionos
-        } else if bundleID.contains("mac") || bundleID.hasSuffix(".mac") {
-            return .macos
-        } else {
-            return .ios
-        }
-    }
-    
     private func determineStatusFromAppStoreState(_ appStoreState: AppStoreConnect_Swift_SDK.AppStoreVersionState?) -> AppStatus {
         guard let state = appStoreState else {
             return .prepareForSubmission
@@ -282,7 +265,7 @@ class AppStoreConnectService: ObservableObject {
             // Get app store versions for this specific app
             let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
                 fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
-                limit: 1
+                limit: 200
             ))
             
             let versionsResponse = try await provider.request(versionsRequest)
@@ -291,20 +274,25 @@ class AppStoreConnectService: ObservableObject {
             if let index = apps.firstIndex(where: { $0.id == app.id }) {
                 let status: AppStatus
                 let versionString: String?
+                let resolvedPlatforms: [Platform]
                 
                 if let latestVersion = versionsResponse.data.first {
                     status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
                     versionString = latestVersion.attributes?.versionString
+                    let versionPlatforms = versionsResponse.data.compactMap { $0.attributes?.platform }
+                    let mergedPlatforms = (app.platforms + versionPlatforms)
+                    resolvedPlatforms = mergedPlatforms.sortedForDisplay()
                 } else {
                     status = .prepareForSubmission
                     versionString = nil
+                    resolvedPlatforms = app.platforms
                 }
                 
                 let updatedApp = AppInfo(
                     id: app.id,
                     name: app.name,
                     bundleID: app.bundleID,
-                    platform: app.platform,
+                    platforms: resolvedPlatforms,
                     status: status,
                     version: versionString,
                     lastModified: app.lastModified
@@ -394,7 +382,9 @@ class AppStoreConnectService: ObservableObject {
             // Create AppDetail
             let app = appResponse.data
             
-            let platform = determinePlatform(from: app.attributes?.bundleID ?? "")
+            let platforms = versionsResponse.data
+                .compactMap { $0.attributes?.platform }
+                .sortedForDisplay()
             let status: AppStatus
             
             if let latestVersion = versionsResponse.data.first {
@@ -407,7 +397,7 @@ class AppStoreConnectService: ObservableObject {
                 id: app.id,
                 name: app.attributes?.name ?? "Unknown",
                 bundleID: app.attributes?.bundleID ?? "",
-                platform: platform,
+                platforms: platforms,
                 status: status,
                 version: versionsResponse.data.first?.attributes?.versionString,
                 sku: app.attributes?.sku,
@@ -418,6 +408,21 @@ class AppStoreConnectService: ObservableObject {
             await MainActor.run {
                 self.appDetail = appDetail
                 self.isLoadingDetail = false
+                
+                if let index = self.apps.firstIndex(where: { $0.id == app.id }) {
+                    let current = self.apps[index]
+                    let mergedPlatforms = (current.platforms + platforms).sortedForDisplay()
+                    let updatedApp = AppInfo(
+                        id: current.id,
+                        name: current.name,
+                        bundleID: current.bundleID,
+                        platforms: mergedPlatforms,
+                        status: current.status,
+                        version: current.version,
+                        lastModified: current.lastModified
+                    )
+                    self.apps[index] = updatedApp
+                }
             }
             
         } catch {
@@ -485,7 +490,7 @@ extension AppStoreConnectService {
                         id: detail.id,
                         name: detail.name,
                         bundleID: detail.bundleID,
-                        platform: detail.platform,
+                        platforms: detail.platforms,
                         status: detail.status,
                         version: detail.version,
                         lastModified: detail.lastModified,

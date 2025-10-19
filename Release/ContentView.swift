@@ -20,7 +20,7 @@ struct ContentView: View {
         
         // Filter by platform
         if let selectedPlatform = selectedPlatform {
-            apps = apps.filter { $0.platform == selectedPlatform }
+            apps = apps.filter { $0.platforms.contains(selectedPlatform) }
         }
         
         // Filter by search text
@@ -69,7 +69,7 @@ struct ContentView: View {
                         HStack {
                             Image(systemName: platform.systemImage)
                                 .foregroundStyle(selectedPlatform == platform ? .white : .primary)
-                            Text(platform.rawValue)
+                            Text(platform.displayName)
                                 .foregroundStyle(selectedPlatform == platform ? .white : .primary)
                             Spacer()
                         }
@@ -244,4 +244,3 @@ struct EmptyStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-

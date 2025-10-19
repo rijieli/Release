@@ -6,14 +6,14 @@
 //
 
 import Foundation
-import SwiftUI
 import AppStoreConnect_Swift_SDK
+import SwiftUI
 
 struct AppInfo: Identifiable, Hashable {
     let id: String
     let name: String
     let bundleID: String
-    let platform: Platform
+    let platforms: [Platform]
     let status: AppStatus
     let version: String?
     let lastModified: Date?
@@ -22,7 +22,7 @@ struct AppInfo: Identifiable, Hashable {
         id: String,
         name: String,
         bundleID: String,
-        platform: Platform,
+        platforms: [Platform] = [],
         status: AppStatus,
         version: String? = nil,
         lastModified: Date? = nil
@@ -30,33 +30,20 @@ struct AppInfo: Identifiable, Hashable {
         self.id = id
         self.name = name
         self.bundleID = bundleID
-        self.platform = platform
+        self.platforms = platforms.sortedForDisplay()
         self.status = status
         self.version = version
         self.lastModified = lastModified
     }
 }
 
-enum Platform: String, CaseIterable, Identifiable, Comparable {
-    case ios = "iOS"
-    case macos = "macOS"
-    case tvos = "tvOS"
-    case watchos = "watchOS"
-    case visionos = "visionOS"
-    
-    var id: String { rawValue }
-    
-    var systemImage: String {
-        switch self {
-        case .ios: return "iphone"
-        case .macos: return "laptopcomputer"
-        case .tvos: return "tv"
-        case .watchos: return "applewatch"
-        case .visionos: return "visionpro"
-        }
+extension AppInfo {
+    var primaryPlatform: Platform? {
+        platforms.first
     }
     
-    static func < (lhs: Platform, rhs: Platform) -> Bool {
-        return lhs.rawValue < rhs.rawValue
+    var platformsDisplayText: String? {
+        guard !platforms.isEmpty else { return nil }
+        return platforms.map(\.displayName).joined(separator: ", ")
     }
 }

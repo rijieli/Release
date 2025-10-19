@@ -7,12 +7,15 @@
 
 import SwiftUI
 import AppKit
+import AppStoreConnect_Swift_SDK
 
 struct AppIconView: View {
     let appId: String
     let bundleID: String
-    let platform: Platform
+    let platform: Platform?
     let size: CGFloat
+    
+    @Environment(\.colorScheme) var colorScheme
     
     private static let imageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
@@ -25,33 +28,40 @@ struct AppIconView: View {
     @State private var iconImage: Image?
     @State private var isLoadingIcon: Bool = false
     
-    init(appId: String, bundleID: String, platform: Platform, size: CGFloat = 40) {
+    init(appId: String, bundleID: String, platform: Platform?, size: CGFloat = 40) {
         self.appId = appId
         self.bundleID = bundleID
         self.platform = platform
         self.size = size
     }
     
+    var whiteBlack: Color { colorScheme == .dark ? .black : .white }
+    var blackWhite: Color { colorScheme == .dark ? .white : .black }
+    
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.2)
-                .fill(.regularMaterial)
-            
+                .fill(whiteBlack)
             if let iconImage = iconImage {
                 iconImage
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
             } else if isLoadingIcon {
                 ProgressView()
                     .scaleEffect(0.5)
             } else {
-                Image(systemName: platform.systemImage)
-                    .font(.system(size: size * 0.4))
-                    .foregroundStyle(.secondary)
+                Image(.icon)
+                    .renderingMode(.template)
+                    .resizable()
+                    .foregroundStyle(blackWhite.opacity(0.3))
+                    .maxFrame()
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
             }
+            RoundedRectangle(cornerRadius: size * 0.2)
+                .strokeBorder(blackWhite.opacity(0.3), lineWidth: 0.5)
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
         .task {
             await loadIconIfNeeded()
         }

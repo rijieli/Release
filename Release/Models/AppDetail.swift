@@ -5,13 +5,14 @@
 //  Created by Roger on 2025/10/6.
 //
 
+import AppStoreConnect_Swift_SDK
 import Foundation
 
 struct AppDetail: Identifiable {
     let id: String
     let name: String
     let bundleID: String
-    let platform: Platform
+    let platforms: [Platform]
     let status: AppStatus
     let version: String?
     let lastModified: Date?
@@ -23,7 +24,7 @@ struct AppDetail: Identifiable {
         id: String,
         name: String,
         bundleID: String,
-        platform: Platform,
+        platforms: [Platform] = [],
         status: AppStatus,
         version: String? = nil,
         lastModified: Date? = nil,
@@ -34,7 +35,7 @@ struct AppDetail: Identifiable {
         self.id = id
         self.name = name
         self.bundleID = bundleID
-        self.platform = platform
+        self.platforms = platforms.sortedForDisplay()
         self.status = status
         self.version = version
         self.lastModified = lastModified
@@ -49,10 +50,21 @@ struct AppDetail: Identifiable {
             id: id,
             name: name,
             bundleID: bundleID,
-            platform: platform,
+            platforms: platforms,
             status: status,
             version: version,
             lastModified: lastModified
         )
+    }
+}
+
+extension AppDetail {
+    var primaryPlatform: Platform? {
+        platforms.first
+    }
+    
+    var platformsDisplayText: String? {
+        guard !platforms.isEmpty else { return nil }
+        return platforms.map(\.displayName).joined(separator: ", ")
     }
 }

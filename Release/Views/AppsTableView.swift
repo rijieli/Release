@@ -22,7 +22,7 @@ struct AppsTableView: View {
                     AppIconView(
                         appId: app.id,
                         bundleID: app.bundleID,
-                        platform: app.platform,
+                        platform: app.primaryPlatform,
                         size: 32
                     )
                     .symbolEffect(.bounce, value: app.status)
@@ -41,14 +41,25 @@ struct AppsTableView: View {
             }
             .width(min: 100, ideal: 150)
 
-            TableColumn("Platform", value: \.platform) { app in
-                HStack(spacing: 8) {
-                    Image(systemName: app.platform.systemImage)
-                    Text(app.platform.rawValue)
+            TableColumn("Platform") { app in
+                if app.platforms.isEmpty {
+                    Text("—")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
+                            ForEach(app.platforms) { platform in
+                                Image(systemName: platform.systemImage)
+                                    .accessibilityLabel(platform.displayName)
+                                    .font(.system(size: 12))
+                            }
+                        }
+                    }
+                    .font(.caption)
                 }
-                .font(.caption)
             }
-            .width(120)
+            .width(160)
 
             TableColumn("Status", value: \.status) { app in
                 HStack(spacing: 8) {

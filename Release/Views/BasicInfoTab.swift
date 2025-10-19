@@ -23,7 +23,7 @@ struct BasicInfoTab: View {
                     InfoRow(label: "Name", value: appDetail.name)
                     InfoRow(label: "Bundle ID", value: appDetail.bundleID)
                     InfoRow(label: "SKU", value: appDetail.sku ?? "N/A")
-                    InfoRow(label: "Platform", value: appDetail.platform.rawValue)
+                    InfoRow(label: "Platform", value: appDetail.platformsDisplayText ?? "Unknown")
                     InfoRow(label: "Status", value: appDetail.status.rawValue)
                     InfoRow(label: "Version", value: appDetail.version ?? "N/A")
                     InfoRow(label: "Primary Language", value: appDetail.primaryLanguage ?? "N/A")
@@ -39,24 +39,6 @@ struct BasicInfoTab: View {
         }
     }
     
-    private func statusDescription(for status: AppStatus) -> String {
-        status.description
-    }
-    
-    private func platformDescription(for platform: Platform) -> String {
-        switch platform {
-        case .ios:
-            return "iOS - iPhone and iPad applications"
-        case .macos:
-            return "macOS - Mac applications"
-        case .tvos:
-            return "tvOS - Apple TV applications"
-        case .watchos:
-            return "watchOS - Apple Watch applications"
-        case .visionos:
-            return "visionOS - Apple Vision Pro applications"
-        }
-    }
 }
 
 struct InfoRow: View {
