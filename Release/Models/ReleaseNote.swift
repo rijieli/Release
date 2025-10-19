@@ -6,16 +6,25 @@
 //
 
 import Foundation
+import AppStoreConnect_Swift_SDK
 
 struct ReleaseNote: Identifiable, Hashable {
     let id: String
     let version: String
+    let platform: Platform?
     let localizedNotes: [LocalizedReleaseNote]
     let releaseDate: Date?
     
-    init(id: String, version: String, localizedNotes: [LocalizedReleaseNote], releaseDate: Date? = nil) {
+    init(
+        id: String,
+        version: String,
+        platform: Platform? = nil,
+        localizedNotes: [LocalizedReleaseNote],
+        releaseDate: Date? = nil
+    ) {
         self.id = id
         self.version = version
+        self.platform = platform
         self.localizedNotes = localizedNotes
         self.releaseDate = releaseDate
     }

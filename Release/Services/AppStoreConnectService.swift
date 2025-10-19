@@ -369,6 +369,7 @@ class AppStoreConnectService: ObservableObject {
                         let releaseNote = ReleaseNote(
                             id: version.id,
                             version: version.attributes?.versionString ?? "Unknown",
+                            platform: version.attributes?.platform,
                             localizedNotes: localizedNotes,
                             releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
                         )
@@ -481,6 +482,7 @@ extension AppStoreConnectService {
                     let updatedReleaseNote = ReleaseNote(
                         id: note.id,
                         version: note.version,
+                        platform: note.platform,
                         localizedNotes: localized,
                         releaseDate: note.releaseDate
                     )

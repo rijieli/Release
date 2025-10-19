@@ -12,6 +12,7 @@ struct AppDetailView: View {
     let appInfo: AppInfo
     @StateObject private var apiService = AppStoreConnectService.shared
     @State private var selectedTab: DetailTab = .basicInfo
+    @State private var selectedPlatform: Platform? = nil
     @Environment(\.openURL) private var openURL
 
     private var activeDetail: AppDetail? {
@@ -22,7 +23,19 @@ struct AppDetailView: View {
     private var currentName: String { activeDetail?.name ?? appInfo.name }
     private var currentBundleID: String { activeDetail?.bundleID ?? appInfo.bundleID }
     private var currentPlatforms: [Platform] { activeDetail?.platforms ?? appInfo.platforms }
-    private var primaryPlatform: Platform? { currentPlatforms.first }
+    private var activePlatform: Platform? {
+        if let selectedPlatform, currentPlatforms.contains(selectedPlatform) {
+            return selectedPlatform
+        }
+        return currentPlatforms.first
+    }
+    private var platformSummaryText: String? {
+        guard !currentPlatforms.isEmpty else { return nil }
+        if let activePlatform {
+            return activePlatform.displayName
+        }
+        return currentPlatforms.map(\.displayName).joined(separator: ", ")
+    }
     private var currentStatus: AppStatus { activeDetail?.status ?? appInfo.status }
     private var currentAppID: String { activeDetail?.id ?? appInfo.id }
     
@@ -43,9 +56,9 @@ struct AppDetailView: View {
                     } else if let appDetail = apiService.appDetail {
                         switch selectedTab {
                         case .basicInfo:
-                            BasicInfoTab(appDetail: appDetail)
+                            BasicInfoTab(appDetail: appDetail, selectedPlatform: activePlatform)
                         case .releaseNotes:
-                            ReleaseNotesTab(appDetail: appDetail)
+                            ReleaseNotesTab(appDetail: appDetail, selectedPlatform: activePlatform)
                         }
                     } else {
                         EmptyDetailView()
@@ -67,6 +80,10 @@ struct AppDetailView: View {
             Task {
                 await apiService.loadAppDetail(for: appInfo.id)
             }
+            syncSelectedPlatform()
+        }
+        .onChange(of: currentPlatforms) { _, _ in
+            syncSelectedPlatform()
         }
         .alert("Error", isPresented: .constant(apiService.errorMessage != nil)) {
             Button("OK") {
@@ -80,64 +97,103 @@ struct AppDetailView: View {
     }
 
     var sidebarContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // App icon
-            AppIconView(
-                appId: currentAppID,
-                bundleID: currentBundleID,
-                platform: primaryPlatform,
-                size: 80
-            )
-            .frame(width: 80, height: 80)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // App icon
+                AppIconView(
+                    appId: currentAppID,
+                    bundleID: currentBundleID,
+                    platform: activePlatform,
+                    size: 80
+                )
+                .frame(width: 80, height: 80)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(currentName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(2)
-                
-                Text(currentBundleID)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                
-                Text("App ID: \(currentAppID)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                
-                if !currentPlatforms.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            ForEach(currentPlatforms) { platform in
-                                Image(systemName: platform.systemImage)
-                                    .foregroundStyle(.blue)
-                                    .accessibilityLabel(platform.displayName)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(currentName)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .lineLimit(2)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Platforms")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        if currentPlatforms.count > 1, let firstPlatform = currentPlatforms.first {
+                            Picker("Platform", selection: Binding(
+                                get: { activePlatform ?? firstPlatform },
+                                set: { selectedPlatform = $0 }
+                            )) {
+                                ForEach(currentPlatforms) { platform in
+                                    Image(systemName: platform.systemImage)
+                                        .tag(platform)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        } else {
+                            HStack(spacing: 6) {
+                                ForEach(currentPlatforms) { platform in
+                                    Image(systemName: platform.systemImage)
+                                        .foregroundStyle(activePlatform == platform ? Color.accentColor : Color.secondary)
+                                        .accessibilityLabel(platform.displayName)
+                                }
                             }
                         }
                     }
-                }
-                
-                HStack(spacing: 8) {
-                    Image(systemName: currentStatus.systemImage)
-                        .foregroundStyle(currentStatus.color)
-                    Text(currentStatus.description)
+                    
+                    if let platformSummaryText {
+                        Text(platformSummaryText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Text(currentBundleID)
                         .font(.caption)
-                }
-                
-                if let url = appStoreURL {
-                    Button {
-                        openURL(url)
-                    } label: {
-                        Label("View in App Store", systemImage: "link")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    
+                    Text("App ID: \(currentAppID)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: currentStatus.systemImage)
+                            .foregroundStyle(currentStatus.color)
+                        Text(currentStatus.description)
                             .font(.caption)
                     }
-                    .buttonStyle(.bordered)
+                    
+                    if let url = appStoreURL {
+                        Button {
+                            openURL(url)
+                        } label: {
+                            Label("View in App Store", systemImage: "link")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
+            .maxWidth(alignment: .leading)
+            .padding(16)
         }
-        .padding(12)
-        .frame(width: 200)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: 200, alignment: .leading)
+    }
+    
+    private func syncSelectedPlatform() {
+        guard !currentPlatforms.isEmpty else {
+            selectedPlatform = nil
+            return
+        }
+        
+        if let selectedPlatform, currentPlatforms.contains(selectedPlatform) {
+            return
+        }
+        
+        selectedPlatform = currentPlatforms.first
     }
 }
 

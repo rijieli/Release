@@ -11,9 +11,11 @@ import AppStoreConnect_Swift_SDK
 
 struct ReleaseNotesTab: View {
     let appDetail: AppDetail
+    let selectedPlatform: Platform?
     
     @StateObject private var apiService = AppStoreConnectService.shared
     
+    @State private var activeReleaseNoteID: String?
     @State private var editorStates: [LocaleEditorState]
     @State private var templateText: String
     @State private var isFetchingPreviousVersion: Bool = false
@@ -26,8 +28,30 @@ struct ReleaseNotesTab: View {
         appDetail.status == .prepareForSubmission
     }
     
+    private var displayedReleaseNotes: [ReleaseNote] {
+        ReleaseNotesTab.resolveDisplayedReleaseNotes(for: appDetail, selectedPlatform: selectedPlatform)
+    }
+    
+    private var orderedReleaseNotes: [ReleaseNote] {
+        guard let activeReleaseNoteID,
+              let index = displayedReleaseNotes.firstIndex(where: { $0.id == activeReleaseNoteID }) else {
+            return displayedReleaseNotes
+        }
+        
+        if index == 0 { return displayedReleaseNotes }
+        
+        var reordered = displayedReleaseNotes
+        let active = reordered.remove(at: index)
+        reordered.insert(active, at: 0)
+        return reordered
+    }
+    
     private var editableReleaseNote: ReleaseNote? {
-        appDetail.releaseNotes.first
+        orderedReleaseNotes.first
+    }
+    
+    private var previousReleaseNotes: [ReleaseNote] {
+        Array(orderedReleaseNotes.dropFirst())
     }
     
     private var hasPendingChanges: Bool {
@@ -35,67 +59,49 @@ struct ReleaseNotesTab: View {
     }
     
     private var hasPreviousVersion: Bool {
-        appDetail.releaseNotes.count > 1
+        displayedReleaseNotes.count > 1
     }
     
-    init(appDetail: AppDetail) {
+    init(appDetail: AppDetail, selectedPlatform: Platform?) {
         self.appDetail = appDetail
-        if let latest = appDetail.releaseNotes.first {
-            _editorStates = State(initialValue: latest.localizedNotes.map { LocaleEditorState(note: $0) })
-        } else {
-            _editorStates = State(initialValue: [])
-        }
+        self.selectedPlatform = selectedPlatform
+        
+        let initialNotes = ReleaseNotesTab.resolveDisplayedReleaseNotes(for: appDetail, selectedPlatform: selectedPlatform)
+        let initialNote = initialNotes.first
+        
+        _activeReleaseNoteID = State(initialValue: initialNote?.id)
+        _editorStates = State(initialValue: initialNote?.localizedNotes.map { LocaleEditorState(note: $0) } ?? [])
         _templateText = State(initialValue: "")
     }
     
     var body: some View {
         VStack(spacing: 0) {
             if isEditable, let editableReleaseNote {
-                editableContent(for: editableReleaseNote)
+                editableContent(for: editableReleaseNote, previousNotes: previousReleaseNotes)
                     .controlSize(.large)
-            } else if appDetail.releaseNotes.isEmpty {
+            } else if displayedReleaseNotes.isEmpty {
                 EmptyReleaseNotesView()
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 20) {
-                        ForEach(appDetail.releaseNotes) { releaseNote in
-                            ReleaseNoteCard(releaseNote: releaseNote)
+                        ForEach(displayedReleaseNotes) { releaseNote in
+                            ReleaseNoteCard(releaseNote: releaseNote, selectedPlatform: selectedPlatform)
                         }
                     }
                     .padding()
                 }
             }
         }
-        .onChange(of: appDetail.releaseNotes) { _, newValue in
-            let existingStates = editorStates
-            
-            guard let latest = newValue.first else {
-                editorStates = []
-                return
-            }
-            
-            let mergedStates = latest.localizedNotes.map { note -> LocaleEditorState in
-                if var existing = existingStates.first(where: { $0.id == note.id }) {
-                    existing.originalText = note.notes
-                    
-                    if existing.uploadStatus == .success {
-                        existing.text = note.notes
-                        existing.uploadStatus = .idle
-                    } else if !existing.hasChanges {
-                        existing.text = note.notes
-                    }
-                    
-                    return existing
-                } else {
-                    return LocaleEditorState(note: note)
-                }
-            }
-            
-            editorStates = mergedStates
-            
-            if mergedStates.allSatisfy({ !$0.hasChanges }) {
-                templateText = ""
-            }
+        .onChange(of: appDetail.releaseNotes) { _, _ in
+            syncActiveReleaseNote()
+            rebuildEditorStates()
+        }
+        .onChange(of: selectedPlatform) { _ in
+            syncActiveReleaseNote()
+            rebuildEditorStates(resetTemplate: true)
+        }
+        .onChange(of: activeReleaseNoteID) { _, _ in
+            rebuildEditorStates(resetTemplate: true)
         }
         .confirmationDialog("Confirm Upload", isPresented: $showUploadConfirmation, titleVisibility: .visible) {
             Button("Upload") {
@@ -135,7 +141,7 @@ struct ReleaseNotesTab: View {
     }
     
     @ViewBuilder
-    private func editableContent(for releaseNote: ReleaseNote) -> some View {
+    private func editableContent(for releaseNote: ReleaseNote, previousNotes: [ReleaseNote]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 editableHeader(for: releaseNote)
@@ -151,7 +157,7 @@ struct ReleaseNotesTab: View {
                     }
                 }
                 
-                if appDetail.releaseNotes.count > 1 {
+                if !previousNotes.isEmpty {
                     Divider()
                         .padding(.vertical, 8)
                     
@@ -160,8 +166,8 @@ struct ReleaseNotesTab: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         
-                        ForEach(appDetail.releaseNotes.dropFirst()) { previousNote in
-                            ReleaseNoteCard(releaseNote: previousNote)
+                        ForEach(previousNotes) { previousNote in
+                            ReleaseNoteCard(releaseNote: previousNote, selectedPlatform: selectedPlatform)
                         }
                     }
                 }
@@ -185,6 +191,13 @@ struct ReleaseNotesTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            
+            if let platform = releaseNote.platform {
+                PlatformBadge(
+                    platform: platform,
+                    isSelected: selectedPlatform == platform
+                )
             }
             
             VStack(alignment: .leading, spacing: 8) {
@@ -318,7 +331,7 @@ struct ReleaseNotesTab: View {
     
     private func fetchPreviousVersionNotes() async {
         guard !isFetchingPreviousVersion else { return }
-        let releaseNotes = apiService.appDetail?.releaseNotes ?? appDetail.releaseNotes
+        let releaseNotes = currentReleaseNotes()
         guard releaseNotes.count > 1 else { return }
         
         await MainActor.run {
@@ -339,14 +352,96 @@ struct ReleaseNotesTab: View {
             isFetchingPreviousVersion = false
         }
     }
+    
+    private func syncActiveReleaseNote() {
+        let notes = displayedReleaseNotes
+        
+        if notes.isEmpty {
+            if activeReleaseNoteID != nil {
+                activeReleaseNoteID = nil
+            }
+            return
+        }
+        
+        if let activeReleaseNoteID,
+           notes.contains(where: { $0.id == activeReleaseNoteID }) {
+            return
+        }
+        
+        activeReleaseNoteID = notes.first?.id
+    }
+    
+    private func rebuildEditorStates(resetTemplate: Bool = false) {
+        let existingStates = resetTemplate ? [] : editorStates
+        
+        guard let note = editableReleaseNote else {
+            editorStates = []
+            templateText = ""
+            return
+        }
+        
+        let mergedStates = note.localizedNotes.map { localization -> LocaleEditorState in
+            if var existing = existingStates.first(where: { $0.id == localization.id }) {
+                existing.originalText = localization.notes
+                
+                if existing.uploadStatus == .success {
+                    existing.text = localization.notes
+                    existing.uploadStatus = .idle
+                } else if !existing.hasChanges {
+                    existing.text = localization.notes
+                }
+                
+                return existing
+            } else {
+                return LocaleEditorState(note: localization)
+            }
+        }
+        
+        editorStates = mergedStates
+        
+        if resetTemplate || mergedStates.allSatisfy({ !$0.hasChanges }) {
+            templateText = ""
+        }
+    }
+    
+    private func currentReleaseNotes() -> [ReleaseNote] {
+        let notes: [ReleaseNote]
+        if let detail = apiService.appDetail, detail.id == appDetail.id {
+            notes = ReleaseNotesTab.resolveDisplayedReleaseNotes(for: detail, selectedPlatform: selectedPlatform)
+        } else {
+            notes = displayedReleaseNotes
+        }
+        guard let activeReleaseNoteID,
+              let index = notes.firstIndex(where: { $0.id == activeReleaseNoteID }) else {
+            return notes
+        }
+        if index == 0 { return notes }
+        var reordered = notes
+        let active = reordered.remove(at: index)
+        reordered.insert(active, at: 0)
+        return reordered
+    }
+    
+    private static func resolveDisplayedReleaseNotes(for appDetail: AppDetail, selectedPlatform: Platform?) -> [ReleaseNote] {
+        let notes = appDetail.releaseNotes
+        guard let selectedPlatform else { return notes }
+        
+        let filtered = notes.filter { note in
+            guard let platform = note.platform else { return true }
+            return platform == selectedPlatform
+        }
+        
+        return filtered.isEmpty ? notes : filtered
+    }
 }
 
 struct ReleaseNoteCard: View {
     let releaseNote: ReleaseNote
+    let selectedPlatform: Platform?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Version \(releaseNote.version)")
                         .font(.title2)
@@ -361,13 +456,22 @@ struct ReleaseNoteCard: View {
                 
                 Spacer()
                 
-                if releaseNote.localizedNotes.count > 1 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "globe")
-                        Text("\(releaseNote.localizedNotes.count) languages")
+                VStack(alignment: .trailing, spacing: 8) {
+                    if let platform = releaseNote.platform {
+                        PlatformBadge(
+                            platform: platform,
+                            isSelected: selectedPlatform == platform
+                        )
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    
+                    if releaseNote.localizedNotes.count > 1 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "globe")
+                            Text("\(releaseNote.localizedNotes.count) languages")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
             }
             
