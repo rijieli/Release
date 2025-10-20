@@ -75,6 +75,15 @@ class AppStoreConnectService: ObservableObject {
         }
     }
     
+    @MainActor
+    func reset() {
+        apps = []
+        appDetail = nil
+        errorMessage = nil
+        isLoading = false
+        isLoadingDetail = false
+    }
+    
     private func formatPrivateKeyForSDK(_ privateKey: String) -> String {
         // The SDK is very particular about the format
         // Ensure proper line breaks and no extra whitespace

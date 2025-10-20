@@ -7,13 +7,17 @@
 
 import SwiftUI
 import AppStoreConnect_Swift_SDK
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var apiService = AppStoreConnectService.shared
-    @StateObject private var settingsManager = SettingsManager()
+    @EnvironmentObject private var settingsManager: SettingsManager
     @State private var selectedPlatform: Platform? = nil
     @State private var searchText = ""
     @State private var sortOrder = [KeyPathComparator(\AppInfo.name)]
+    @State private var showingFilePicker = false
+    @State private var testResult: String?
+    @State private var isTestingConnection = false
     
     private var filteredApps: [AppInfo] {
         var apps = apiService.apps
@@ -117,7 +121,13 @@ struct ContentView: View {
                 // Content area with modern states
                 Group {
                     if !settingsManager.isConfigured {
-                        ConfigurationRequiredView()
+                        APIConfigurationView(
+                            settingsManager: settingsManager,
+                            apiService: apiService,
+                            showingFilePicker: $showingFilePicker,
+                            testResult: $testResult,
+                            isTestingConnection: $isTestingConnection
+                        )
                     } else if apiService.isLoading {
                         LoadingView()
                     } else if apiService.apps.isEmpty {
@@ -139,7 +149,7 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .disabled(apiService.isLoading)
+                .disabled(!settingsManager.isConfigured || apiService.isLoading)
                 
                 SettingsLink {
                     Image(systemName: "gearshape")
@@ -164,6 +174,13 @@ struct ContentView: View {
                 await apiService.loadApps()
             }
         }
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.data, .text],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFileSelection(result)
+        }
         .alert("Error", isPresented: .constant(apiService.errorMessage != nil)) {
             Button("OK") {
                 apiService.errorMessage = nil
@@ -178,35 +195,6 @@ struct ContentView: View {
 
 // MARK: - Supporting Views
 
-struct ConfigurationRequiredView: View {
-    var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "gear.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.secondary)
-                .symbolEffect(.pulse, isActive: true)
-            
-            VStack(spacing: 12) {
-                Text("App Store Connect Not Configured")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Text("Please configure your API credentials in Settings to view your apps.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 400)
-            }
-            
-            SettingsLink {
-                Text("Open Settings")
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 struct LoadingView: View {
     var body: some View {
         VStack(spacing: 20) {
@@ -219,6 +207,30 @@ struct LoadingView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Helpers
+
+extension ContentView {
+    private func handleFileSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            
+            do {
+                try settingsManager.loadPrivateKey(from: url)
+            } catch {
+                if let settingsError = error as? SettingsManager.SettingsError {
+                    apiService.errorMessage = settingsError.errorDescription
+                } else {
+                    apiService.errorMessage = error.localizedDescription
+                }
+            }
+            
+        case .failure(let error):
+            apiService.errorMessage = "Failed to select file: \(error.localizedDescription)"
+        }
     }
 }
 

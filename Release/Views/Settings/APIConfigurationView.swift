@@ -25,7 +25,7 @@ struct APIConfigurationView: View {
                     testConnection()
                 }
                 .buttonStyle(.bordered)
-                .disabled(!settingsManager.isConfigured || isTestingConnection)
+                .disabled(!settingsManager.config.isValid || isTestingConnection)
 
                 if isTestingConnection {
                     ProgressView()
@@ -36,9 +36,18 @@ struct APIConfigurationView: View {
 
                 Button("Save Configuration") {
                     settingsManager.saveConfig()
+                    apiService.configure(
+                        issuerID: settingsManager.config.issuerID,
+                        privateKeyID: settingsManager.config.privateKeyID,
+                        privateKey: settingsManager.config.privateKey
+                    )
+                    
+                    Task {
+                        await apiService.loadApps()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!settingsManager.isConfigured)
+                .disabled(!settingsManager.config.isValid)
 
                 Button("Clear", role: .destructive) {
                     showingClearConfirmation = true
@@ -54,6 +63,11 @@ struct APIConfigurationView: View {
             Button("Clear Anyway", role: .destructive) {
                 settingsManager.clearConfig()
                 testResult = nil
+                Task {
+                    await MainActor.run {
+                        apiService.reset()
+                    }
+                }
             }
         } message: {
             Text("Double-check your credentials before clearing. This action removes the saved API settings.")
@@ -200,10 +214,18 @@ struct APIConfigurationView: View {
 
             let success = await apiService.testConnection()
 
+            if success {
+                await MainActor.run {
+                    settingsManager.saveConfig()
+                }
+                
+                await apiService.loadApps()
+            }
+            
             await MainActor.run {
-                testResult =
-                    success
-                    ? "✅ Connection successful!" : "❌ Connection failed. Check your credentials."
+                testResult = success
+                    ? "✅ Connection successful!"
+                    : "❌ Connection failed. Check your credentials."
                 isTestingConnection = false
             }
         }

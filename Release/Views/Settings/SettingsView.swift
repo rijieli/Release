@@ -9,7 +9,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @StateObject private var settingsManager = SettingsManager()
+    @EnvironmentObject private var settingsManager: SettingsManager
     @StateObject private var apiService = AppStoreConnectService.shared
     @State private var showingFilePicker = false
     @State private var testResult: String?
@@ -60,24 +60,13 @@ struct SettingsView: View {
             guard let url = urls.first else { return }
             
             do {
-                // Start accessing the security-scoped resource
-                guard url.startAccessingSecurityScopedResource() else {
-                    apiService.errorMessage = "Permission denied: Unable to access the selected file. Please try selecting the file again."
-                    return
-                }
-                
-                defer {
-                    url.stopAccessingSecurityScopedResource()
-                }
-                
-                let data = try Data(contentsOf: url)
-                if let privateKeyString = String(data: data, encoding: .utf8) {
-                    settingsManager.config.privateKey = privateKeyString
-                } else {
-                    apiService.errorMessage = "Failed to read file content. Please ensure the file is a valid .p8 private key file."
-                }
+                try settingsManager.loadPrivateKey(from: url)
             } catch {
-                apiService.errorMessage = "Failed to read private key file: \(error.localizedDescription)\n\nPlease ensure:\n• The file is a valid .p8 private key file\n• You have permission to read the file\n• The file is not corrupted"
+                if let settingsError = error as? SettingsManager.SettingsError {
+                    apiService.errorMessage = settingsError.errorDescription
+                } else {
+                    apiService.errorMessage = error.localizedDescription
+                }
             }
             
         case .failure(let error):

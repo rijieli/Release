@@ -11,9 +11,12 @@ let kMainWindowID = "Window.Main"
 
 @main
 struct ReleaseApp: App {
+    @StateObject private var settingsManager = SettingsManager()
+    
     var body: some Scene {
         WindowGroup("Release", id: kMainWindowID) {
             ContentView()
+                .environmentObject(settingsManager)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -49,6 +52,7 @@ struct ReleaseApp: App {
         Settings {
             SettingsView()
                 .frame(width: 600, height: 400)
+                .environmentObject(settingsManager)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
