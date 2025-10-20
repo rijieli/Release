@@ -18,10 +18,14 @@ class AppStoreConnectService: ObservableObject {
     @Published var errorMessage: String?
     @Published var appDetail: AppDetail?
     @Published var isLoadingDetail: Bool = false
+    @Published var initialLoadingProgress: Double = 0.0
+    @Published var isInitialLoadingComplete: Bool = false
     
     private var configuration: APIConfiguration?
     private var loadingBasicDetailAppIDs: Set<String> = []
     private var loadedBasicDetailAppIDs: Set<String> = []
+
+    private let targetPlatforms: [Platform] = [.ios, .macOs, .tvOs, .visionOs]
     
     enum ServiceError: LocalizedError {
         case notConfigured
@@ -82,6 +86,8 @@ class AppStoreConnectService: ObservableObject {
         errorMessage = nil
         isLoading = false
         isLoadingDetail = false
+        initialLoadingProgress = 0.0
+        isInitialLoadingComplete = false
     }
     
     private func formatPrivateKeyForSDK(_ privateKey: String) -> String {
@@ -139,79 +145,154 @@ class AppStoreConnectService: ObservableObject {
     
     func loadApps() async {
         let startTime = CFAbsoluteTimeGetCurrent()
-        
+
         guard let configuration = configuration else {
             await MainActor.run {
                 errorMessage = "API not configured. Please check your settings."
             }
             return
         }
-        
+
         await MainActor.run {
             isLoading = true
             errorMessage = nil
-            loadingBasicDetailAppIDs.removeAll()
-            loadedBasicDetailAppIDs.removeAll()
+            initialLoadingProgress = 0.0
+            isInitialLoadingComplete = false
+            apps = []
         }
-        
+
         do {
             let provider = APIProvider(configuration: configuration)
-            
-            // First, get all apps
-            let appsRequest = APIEndpoint.v1.apps.get(parameters: .init(
-                fieldsApps: [.name, .bundleID],
-                limit: 200
-            ))
-            
-            let appsResponse = try await provider.request(appsRequest)
-            
-            // Create apps with basic info only (fast loading)
-            let appInfos = appsResponse.data.map { app in
-                AppInfo(
-                    id: app.id,
-                    name: app.attributes?.name ?? "Unknown",
-                    bundleID: app.attributes?.bundleID ?? "",
-                    platforms: [],
-                    status: .prepareForSubmission,
-                    version: nil
-                )
-            }
-            
-            await MainActor.run {
-                self.apps = appInfos
-                self.isLoading = false
-            }
-            
-            let totalTime = CFAbsoluteTimeGetCurrent() - startTime
-            log.debug("📱 Initial apps list loaded in \(String(format: "%.2f", totalTime))s (\(appInfos.count) apps)")
-            
-            Task.detached { [weak self] in
-                guard let self else { return }
-                let semaphore = AsyncSemaphore(value: 5)
-                
-                await withTaskGroup(of: Void.self) { group in
-                    for app in appInfos {
-                        group.addTask { [weak self] in
-                            guard let self else { return }
-                            await semaphore.acquire()
-                            await self.loadAppDetails(for: app)
-                            await semaphore.release()
+            var allAppInfos: [AppInfo] = []
+
+            // Make platform-specific requests
+            for (index, platform) in targetPlatforms.enumerated() {
+                do {
+                    // Get apps with versions for this specific platform
+                    let appsRequest = APIEndpoint.v1.apps.get(parameters: .init(
+                        fieldsApps: [.name, .bundleID],
+                        limit: 200
+                    ))
+
+                    let appsResponse = try await provider.request(appsRequest)
+
+                    // For each app, get the latest version for this platform
+                    let platformAppInfos = try await withThrowingTaskGroup(of: AppInfo?.self) { group in
+                        var results: [AppInfo] = []
+
+                        for app in appsResponse.data {
+                            group.addTask { [weak self] in
+                                guard let self = self else { return nil }
+                                return try await self.loadAppInfoForPlatform(app: app, platform: platform, provider: provider)
+                            }
                         }
+
+                        for try await result in group {
+                            if let appInfo = result {
+                                results.append(appInfo)
+                            }
+                        }
+
+                        return results
+                    }
+
+                    allAppInfos.append(contentsOf: platformAppInfos)
+
+                    // Update progress
+                    let progress = Double(index + 1) / Double(targetPlatforms.count)
+                    await MainActor.run {
+                        self.initialLoadingProgress = progress
+                    }
+
+                    log.debug("📱 Loaded \(platformAppInfos.count) apps for platform \(platform.displayName)")
+                } catch {
+                    log.warning("⚠️ Failed to load apps for platform \(platform.displayName): \(error.localizedDescription)")
+
+                    // Try a simpler approach - just get basic app info without detailed versions
+                    do {
+                        let fallbackAppsRequest = APIEndpoint.v1.apps.get(parameters: .init(
+                            fieldsApps: [.name, .bundleID],
+                            limit: 200
+                        ))
+
+                        let fallbackAppsResponse = try await provider.request(fallbackAppsRequest)
+
+                        // Create fallback app infos with just the platform (no detailed version info)
+                        let fallbackAppInfos = fallbackAppsResponse.data.map { app in
+                            AppInfo(
+                                id: "\(app.id)-\(platform.id)",
+                                name: app.attributes?.name ?? "Unknown",
+                                bundleID: app.attributes?.bundleID ?? "",
+                                platform: platform,
+                                status: .prepareForSubmission, // Default status
+                                version: nil, // No version info available
+                                lastModified: nil
+                            )
+                        }
+
+                        allAppInfos.append(contentsOf: fallbackAppInfos)
+                        log.warning("⚠️ Used fallback loading for platform \(platform.displayName): \(fallbackAppInfos.count) apps with limited info")
+
+                    } catch {
+                        log.error("❌ Even fallback loading failed for platform \(platform.displayName): \(error.localizedDescription)")
                     }
                 }
             }
-            
+
+            await MainActor.run {
+                self.apps = allAppInfos.sorted { $0.name < $1.name }
+                self.isLoading = false
+                self.isInitialLoadingComplete = true
+                self.initialLoadingProgress = 1.0
+            }
+
+            let totalTime = CFAbsoluteTimeGetCurrent() - startTime
+            log.debug("📱 All platform-specific apps loaded in \(String(format: "%.2f", totalTime))s (\(allAppInfos.count) total rows)")
+
         } catch {
             let totalTime = CFAbsoluteTimeGetCurrent() - startTime
             log.error("❌ Failed to load apps after \(String(format: "%.2f", totalTime))s: \(error.localizedDescription)")
-            
+
             await MainActor.run {
                 self.errorMessage = "Failed to load apps: \(error.localizedDescription)"
                 self.isLoading = false
+                self.isInitialLoadingComplete = false
             }
         }
     }
-    
+
+    private func loadAppInfoForPlatform(app: AppStoreConnect_Swift_SDK.App, platform: Platform, provider: APIProvider) async throws -> AppInfo? {
+        // Get app store versions for this specific platform
+        let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
+            fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
+            limit: 10
+        ))
+
+        let versionsResponse = try await provider.request(versionsRequest)
+
+        // Find the latest version for this platform
+        let platformVersions = versionsResponse.data.filter { version in
+            guard let versionPlatform = version.attributes?.platform else { return false }
+            return versionPlatform == platform
+        }
+
+        guard let latestVersion = platformVersions.first else {
+            return nil
+        }
+
+        let status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
+
+        return AppInfo(
+            id: "\(app.id)-\(platform.id)", // Create unique ID for platform-specific row
+            name: app.attributes?.name ?? "Unknown",
+            bundleID: app.attributes?.bundleID ?? "",
+            platform: platform,
+            status: status,
+            version: latestVersion.attributes?.versionString,
+            lastModified: latestVersion.attributes?.createdDate
+        )
+    }
+
     func testConnection() async -> Bool {
         guard let configuration = configuration else { 
             return false 
@@ -283,25 +364,20 @@ class AppStoreConnectService: ObservableObject {
             if let index = apps.firstIndex(where: { $0.id == app.id }) {
                 let status: AppStatus
                 let versionString: String?
-                let resolvedPlatforms: [Platform]
-                
+
                 if let latestVersion = versionsResponse.data.first {
                     status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
                     versionString = latestVersion.attributes?.versionString
-                    let versionPlatforms = versionsResponse.data.compactMap { $0.attributes?.platform }
-                    let mergedPlatforms = (app.platforms + versionPlatforms)
-                    resolvedPlatforms = mergedPlatforms.sortedForDisplay()
                 } else {
                     status = .prepareForSubmission
                     versionString = nil
-                    resolvedPlatforms = app.platforms
                 }
-                
+
                 let updatedApp = AppInfo(
                     id: app.id,
                     name: app.name,
                     bundleID: app.bundleID,
-                    platforms: resolvedPlatforms,
+                    platform: app.platform,
                     status: status,
                     version: versionString,
                     lastModified: app.lastModified
@@ -321,7 +397,7 @@ class AppStoreConnectService: ObservableObject {
         }
     }
     
-    func loadAppDetail(for appId: String) async {
+    func loadAppDetail(for appId: String, platform: Platform) async {
         guard let configuration = configuration else {
             await MainActor.run {
                 errorMessage = "API not configured. Please check your settings."
@@ -354,41 +430,6 @@ class AppStoreConnectService: ObservableObject {
             
             let versionsResponse = try await provider.request(versionsRequest)
             
-            // Get release notes for available versions (most recent first)
-            var releaseNotes: [ReleaseNote] = []
-            
-            for version in versionsResponse.data {
-                let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(version.id).appStoreVersionLocalizations.get(parameters: .init(
-                    fieldsAppStoreVersionLocalizations: [.locale, .whatsNew]
-                ))
-                
-                do {
-                    let releaseNotesResponse = try await provider.request(releaseNotesRequest)
-                    
-                    let localizedNotes = releaseNotesResponse.data.map { localization in
-                        LocalizedReleaseNote(
-                            id: localization.id,
-                            locale: localization.attributes?.locale ?? "en",
-                            notes: localization.attributes?.whatsNew ?? "",
-                            whatsNew: localization.attributes?.whatsNew
-                        )
-                    }
-                    
-                    if !localizedNotes.isEmpty {
-                        let releaseNote = ReleaseNote(
-                            id: version.id,
-                            version: version.attributes?.versionString ?? "Unknown",
-                            platform: version.attributes?.platform,
-                            localizedNotes: localizedNotes,
-                            releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
-                        )
-                        releaseNotes.append(releaseNote)
-                    }
-                } catch {
-                    log.warning("⚠️ Failed to load release notes for version \(version.id): \(error.localizedDescription)")
-                }
-            }
-            
             // Create AppDetail
             let app = appResponse.data
             
@@ -407,32 +448,19 @@ class AppStoreConnectService: ObservableObject {
                 id: app.id,
                 name: app.attributes?.name ?? "Unknown",
                 bundleID: app.attributes?.bundleID ?? "",
-                platforms: platforms,
+                platform: platform,
                 status: status,
                 version: versionsResponse.data.first?.attributes?.versionString,
                 sku: app.attributes?.sku,
-                primaryLanguage: app.attributes?.primaryLocale,
-                releaseNotes: releaseNotes
+                primaryLanguage: app.attributes?.primaryLocale
             )
             
             await MainActor.run {
                 self.appDetail = appDetail
                 self.isLoadingDetail = false
                 
-                if let index = self.apps.firstIndex(where: { $0.id == app.id }) {
-                    let current = self.apps[index]
-                    let mergedPlatforms = (current.platforms + platforms).sortedForDisplay()
-                    let updatedApp = AppInfo(
-                        id: current.id,
-                        name: current.name,
-                        bundleID: current.bundleID,
-                        platforms: mergedPlatforms,
-                        status: current.status,
-                        version: current.version,
-                        lastModified: current.lastModified
-                    )
-                    self.apps[index] = updatedApp
-                }
+                // No need to update apps array since each AppInfo represents a single platform
+                // The apps are already loaded with their specific platforms
             }
             
         } catch {
@@ -476,43 +504,67 @@ extension AppStoreConnectService {
             whatsNew: attributes.whatsNew
         )
         
-        await MainActor.run {
-            guard let detail = self.appDetail else { return }
-            var updatedReleaseNotes = detail.releaseNotes
-            
-            if let index = updatedReleaseNotes.firstIndex(where: { note in
-                note.localizedNotes.contains(where: { $0.id == localizationId })
-            }) {
-                let note = updatedReleaseNotes[index]
-                var localized = note.localizedNotes
-                
-                if let localizationIndex = localized.firstIndex(where: { $0.id == localizationId }) {
-                    localized[localizationIndex] = updatedNote
-                    let updatedReleaseNote = ReleaseNote(
-                        id: note.id,
-                        version: note.version,
-                        platform: note.platform,
-                        localizedNotes: localized,
-                        releaseDate: note.releaseDate
-                    )
-                    updatedReleaseNotes[index] = updatedReleaseNote
-                    
-                    self.appDetail = AppDetail(
-                        id: detail.id,
-                        name: detail.name,
-                        bundleID: detail.bundleID,
-                        platforms: detail.platforms,
-                        status: detail.status,
-                        version: detail.version,
-                        lastModified: detail.lastModified,
-                        sku: detail.sku,
-                        primaryLanguage: detail.primaryLanguage,
-                        releaseNotes: updatedReleaseNotes
+  
+        return updatedNote
+    }
+
+    func loadReleaseNotes(for appId: String, platform: Platform? = nil) async throws -> [ReleaseNote] {
+        guard let configuration = configuration else {
+            throw ServiceError.notConfigured
+        }
+
+        let provider = APIProvider(configuration: configuration)
+
+        let versionsRequest = APIEndpoint.v1.apps.id(appId).appStoreVersions.get(parameters: .init(
+            fieldsAppStoreVersions: [.versionString, .appStoreState, .platform, .releaseType],
+            limit: 10,
+            include: [.appStoreVersionLocalizations],
+        ))
+
+        let versionsResponse = try await provider.request(versionsRequest)
+
+        var releaseNotes: [ReleaseNote] = []
+
+        for version in versionsResponse.data {
+            let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(version.id).appStoreVersionLocalizations.get(parameters: .init(
+                fieldsAppStoreVersionLocalizations: [.locale, .whatsNew]
+            ))
+
+            do {
+                let releaseNotesResponse = try await provider.request(releaseNotesRequest)
+
+                let localizedNotes = releaseNotesResponse.data.map { localization in
+                    LocalizedReleaseNote(
+                        id: localization.id,
+                        locale: localization.attributes?.locale ?? "en",
+                        notes: localization.attributes?.whatsNew ?? "",
+                        whatsNew: localization.attributes?.whatsNew
                     )
                 }
+
+                if !localizedNotes.isEmpty {
+                    let releaseNote = ReleaseNote(
+                        id: version.id,
+                        version: version.attributes?.versionString ?? "Unknown",
+                        platform: version.attributes?.platform,
+                        localizedNotes: localizedNotes,
+                        releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
+                    )
+                    releaseNotes.append(releaseNote)
+                }
+            } catch {
+                log.warning("⚠️ Failed to load release notes for version \(version.id): \(error.localizedDescription)")
             }
         }
-        
-        return updatedNote
+
+        if let selectedPlatform = platform {
+            let filtered = releaseNotes.filter { note in
+                guard let notePlatform = note.platform else { return true }
+                return notePlatform == selectedPlatform
+            }
+            return filtered.isEmpty ? releaseNotes : filtered
+        }
+
+        return releaseNotes
     }
 }

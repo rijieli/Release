@@ -12,15 +12,7 @@ struct BasicInfoTab: View {
     let appDetail: AppDetail
     let selectedPlatform: Platform?
     
-    private var platformSummary: String {
-        if let selectedPlatform {
-            return selectedPlatform.displayName
-        }
-        if let summary = appDetail.platformsDisplayText {
-            return summary
-        }
-        return "Unknown"
-    }
+    private var platformSummary: String { appDetail.platform.displayName }
     
     private var lastModifiedText: String? {
         guard let lastModified = appDetail.lastModified else { return nil }
@@ -59,14 +51,10 @@ struct BasicInfoTab: View {
                 Text(platformSummary)
                     .font(.headline)
                 
-                HStack(spacing: 8) {
-                    ForEach(appDetail.platforms) { platform in
-                        PlatformBadge(
-                            platform: platform,
-                            isSelected: selectedPlatform == platform
-                        )
-                    }
-                }
+                PlatformBadge(
+                    platform: appDetail.platform,
+                    isSelected: true
+                )
             }
             
             Divider()

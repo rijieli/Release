@@ -21,12 +21,12 @@ struct ContentView: View {
     
     private var filteredApps: [AppInfo] {
         var apps = apiService.apps
-        
+
         // Filter by platform
         if let selectedPlatform = selectedPlatform {
-            apps = apps.filter { $0.platforms.contains(selectedPlatform) }
+            apps = apps.filter { $0.platform == selectedPlatform }
         }
-        
+
         // Filter by search text
         if !searchText.isEmpty {
             apps = apps.filter { app in
@@ -34,7 +34,7 @@ struct ContentView: View {
                 app.bundleID.localizedCaseInsensitiveContains(searchText)
             }
         }
-        
+
         return apps.sorted(using: sortOrder)
     }
     
@@ -129,7 +129,21 @@ struct ContentView: View {
                             isTestingConnection: $isTestingConnection
                         )
                     } else if apiService.isLoading {
-                        LoadingView()
+                        VStack(spacing: 20) {
+                            ProgressView(value: apiService.initialLoadingProgress, total: 1.0)
+                                .progressViewStyle(.linear)
+                                .frame(maxWidth: 300)
+                                .padding(20)
+
+                            Text("Loading apps for platforms...")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+
+                            Text("\(Int(apiService.initialLoadingProgress * 100))% complete")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if apiService.apps.isEmpty {
                         EmptyStateView()
                     } else {

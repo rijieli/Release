@@ -12,29 +12,30 @@ struct AppDetailView: View {
     let appInfo: AppInfo
     @StateObject private var apiService = AppStoreConnectService.shared
     @State private var selectedTab: DetailTab = .basicInfo
-    @State private var selectedPlatform: Platform? = nil
     @Environment(\.openURL) private var openURL
 
     private var activeDetail: AppDetail? {
-        guard let detail = apiService.appDetail, detail.id == appInfo.id else { return nil }
+        // Extract original app ID from platform-specific ID
+        let originalAppID = extractOriginalAppID(from: appInfo.id)
+        guard let detail = apiService.appDetail, detail.id == originalAppID else { return nil }
         return detail
+    }
+
+    private func extractOriginalAppID(from id: String) -> String {
+        // If the ID contains a platform suffix, extract the original app ID
+        if let dashIndex = id.lastIndex(of: "-") {
+            return String(id.prefix(upTo: dashIndex))
+        }
+        return id
     }
     
     private var currentName: String { activeDetail?.name ?? appInfo.name }
     private var currentBundleID: String { activeDetail?.bundleID ?? appInfo.bundleID }
-    private var currentPlatforms: [Platform] { activeDetail?.platforms ?? appInfo.platforms }
-    private var activePlatform: Platform? {
-        if let selectedPlatform, currentPlatforms.contains(selectedPlatform) {
-            return selectedPlatform
-        }
-        return currentPlatforms.first
+    private var currentPlatform: Platform? {
+        appInfo.platform
     }
     private var platformSummaryText: String? {
-        guard !currentPlatforms.isEmpty else { return nil }
-        if let activePlatform {
-            return activePlatform.displayName
-        }
-        return currentPlatforms.map(\.displayName).joined(separator: ", ")
+        return currentPlatform?.displayName
     }
     private var currentStatus: AppStatus { activeDetail?.status ?? appInfo.status }
     private var currentAppID: String { activeDetail?.id ?? appInfo.id }
@@ -56,9 +57,9 @@ struct AppDetailView: View {
                     } else if let appDetail = apiService.appDetail {
                         switch selectedTab {
                         case .basicInfo:
-                            BasicInfoTab(appDetail: appDetail, selectedPlatform: activePlatform)
+                            BasicInfoTab(appDetail: appDetail, selectedPlatform: currentPlatform)
                         case .releaseNotes:
-                            ReleaseNotesTab(appDetail: appDetail, selectedPlatform: activePlatform)
+                            ReleaseNotesTab(appDetail: appDetail, selectedPlatform: currentPlatform)
                         }
                     } else {
                         EmptyDetailView()
@@ -78,12 +79,9 @@ struct AppDetailView: View {
         .frame(minWidth: 800, minHeight: 600)
         .onAppear {
             Task {
-                await apiService.loadAppDetail(for: appInfo.id)
+                let originalAppID = extractOriginalAppID(from: appInfo.id)
+                await apiService.loadAppDetail(for: originalAppID, platform: appInfo.platform)
             }
-            syncSelectedPlatform()
-        }
-        .onChange(of: currentPlatforms) { _, _ in
-            syncSelectedPlatform()
         }
         .alert("Error", isPresented: .constant(apiService.errorMessage != nil)) {
             Button("OK") {
@@ -103,7 +101,7 @@ struct AppDetailView: View {
                 AppIconView(
                     appId: currentAppID,
                     bundleID: currentBundleID,
-                    platform: activePlatform,
+                    platform: currentPlatform,
                     size: 80
                 )
                 .frame(width: 80, height: 80)
@@ -115,30 +113,27 @@ struct AppDetailView: View {
                         .lineLimit(2)
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Platforms")
+                        Text("Platform")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        
-                        if currentPlatforms.count > 1, let firstPlatform = currentPlatforms.first {
-                            Picker("Platform", selection: Binding(
-                                get: { activePlatform ?? firstPlatform },
-                                set: { selectedPlatform = $0 }
-                            )) {
-                                ForEach(currentPlatforms) { platform in
-                                    Image(systemName: platform.systemImage)
-                                        .tag(platform)
-                                }
+
+                        if let currentPlatform = currentPlatform {
+                            HStack(spacing: 8) {
+                                Image(systemName: currentPlatform.systemImage)
+                                    .foregroundStyle(Color.accentColor)
+                                    .font(.system(size: 16))
+
+                                Text(currentPlatform.displayName)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
                             }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
                         } else {
-                            HStack(spacing: 6) {
-                                ForEach(currentPlatforms) { platform in
-                                    Image(systemName: platform.systemImage)
-                                        .foregroundStyle(activePlatform == platform ? Color.accentColor : Color.secondary)
-                                        .accessibilityLabel(platform.displayName)
-                                }
-                            }
+                            Text("Unknown Platform")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     
@@ -182,29 +177,15 @@ struct AppDetailView: View {
         .scrollBounceBehavior(.basedOnSize)
         .frame(width: 200, alignment: .leading)
     }
-    
-    private func syncSelectedPlatform() {
-        guard !currentPlatforms.isEmpty else {
-            selectedPlatform = nil
-            return
-        }
-        
-        if let selectedPlatform, currentPlatforms.contains(selectedPlatform) {
-            return
-        }
-        
-        selectedPlatform = currentPlatforms.first
-    }
-}
+
+// MARK: - Supporting Views
 
 private enum DetailTab: Int, Identifiable {
     case basicInfo
     case releaseNotes
-    
+
     var id: Int { rawValue }
 }
-
-// MARK: - Supporting Views
 
 struct LoadingDetailView: View {
     var body: some View {
@@ -239,4 +220,5 @@ struct EmptyDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 }

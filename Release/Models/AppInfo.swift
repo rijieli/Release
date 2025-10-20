@@ -13,16 +13,16 @@ struct AppInfo: Identifiable, Hashable {
     let id: String
     let name: String
     let bundleID: String
-    let platforms: [Platform]
+    let platform: Platform
     let status: AppStatus
     let version: String?
     let lastModified: Date?
-    
+
     init(
         id: String,
         name: String,
         bundleID: String,
-        platforms: [Platform] = [],
+        platform: Platform,
         status: AppStatus,
         version: String? = nil,
         lastModified: Date? = nil
@@ -30,7 +30,7 @@ struct AppInfo: Identifiable, Hashable {
         self.id = id
         self.name = name
         self.bundleID = bundleID
-        self.platforms = platforms.sortedForDisplay()
+        self.platform = platform
         self.status = status
         self.version = version
         self.lastModified = lastModified
@@ -38,12 +38,7 @@ struct AppInfo: Identifiable, Hashable {
 }
 
 extension AppInfo {
-    var primaryPlatform: Platform? {
-        platforms.first
-    }
-    
-    var platformsDisplayText: String? {
-        guard !platforms.isEmpty else { return nil }
-        return platforms.map(\.displayName).joined(separator: ", ")
+    var platformDisplayText: String {
+        platform.displayName
     }
 }
