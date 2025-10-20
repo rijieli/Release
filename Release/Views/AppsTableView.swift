@@ -52,7 +52,7 @@ struct AppsTableView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .width(160)
+            .width(80)
 
             TableColumn("Status", value: \.status) { app in
                 HStack(spacing: 8) {

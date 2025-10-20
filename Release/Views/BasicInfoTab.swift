@@ -31,37 +31,7 @@ struct BasicInfoTab: View {
     
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(appDetail.name)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(2)
-                
-                Text(appDetail.bundleID)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Viewing Platform")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Text(platformSummary)
-                    .font(.headline)
-                
-                PlatformBadge(
-                    platform: appDetail.platform,
-                    isSelected: true
-                )
-            }
-            
-            Divider()
-            
             VStack(alignment: .leading, spacing: 12) {
-                StatusBadge(status: appDetail.status)
-                
                 HStack(spacing: 12) {
                     if let version = appDetail.version {
                         MetadataChip(
@@ -70,7 +40,7 @@ struct BasicInfoTab: View {
                             systemImage: "number.circle"
                         )
                     }
-                    
+
                     if let language = appDetail.primaryLanguage {
                         MetadataChip(
                             title: "Primary Language",
@@ -79,7 +49,7 @@ struct BasicInfoTab: View {
                         )
                     }
                 }
-                
+
                 if let lastModifiedText {
                     Text("Last Modified \(lastModifiedText)")
                         .font(.footnote)
@@ -93,13 +63,11 @@ struct BasicInfoTab: View {
     
     private var identifiersCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Identifiers")
+            Text("Additional Identifiers")
                 .font(.headline)
-            
+
             VStack(spacing: 12) {
-                InfoRow(label: "App Store ID", value: appDetail.id)
                 InfoRow(label: "SKU", value: appDetail.sku ?? "N/A")
-                InfoRow(label: "Primary Language", value: appDetail.primaryLanguage ?? "N/A")
             }
         }
         .padding()
@@ -127,49 +95,6 @@ struct InfoRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
-    }
-}
-
-struct PlatformBadge: View {
-    let platform: Platform
-    let isSelected: Bool
-    
-    var body: some View {
-        Label {
-            Text(platform.displayName)
-                .font(.caption)
-                .fontWeight(.medium)
-        } icon: {
-            Image(systemName: platform.systemImage)
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
-        .background(
-            Capsule()
-                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
-        )
-        .foregroundStyle(isSelected ? Color.accentColor : .primary)
-    }
-}
-
-struct StatusBadge: View {
-    let status: AppStatus
-    
-    var body: some View {
-        Label {
-            Text(status.description)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-        } icon: {
-            Image(systemName: status.systemImage)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            Capsule()
-                .fill(status.color.opacity(0.18))
-        )
-        .foregroundStyle(status.color)
     }
 }
 

@@ -31,11 +31,11 @@ struct AppDetailView: View {
     
     private var currentName: String { activeDetail?.name ?? appInfo.name }
     private var currentBundleID: String { activeDetail?.bundleID ?? appInfo.bundleID }
-    private var currentPlatform: Platform? {
+    private var currentPlatform: Platform {
         appInfo.platform
     }
-    private var platformSummaryText: String? {
-        return currentPlatform?.displayName
+    private var platformSummaryText: String {
+        return currentPlatform.displayName
     }
     private var currentStatus: AppStatus { activeDetail?.status ?? appInfo.status }
     private var currentAppID: String { activeDetail?.id ?? appInfo.id }
@@ -47,7 +47,7 @@ struct AppDetailView: View {
 
     var body: some View {
         NavigationSplitView {
-            sidebarContent.navigationSplitViewColumnWidth(200)
+            sidebarContent
         } detail: {
             VStack(spacing: 0) {
                 // Content area
@@ -106,65 +106,48 @@ struct AppDetailView: View {
                 )
                 .frame(width: 80, height: 80)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text(currentName)
                         .font(.title2)
                         .fontWeight(.semibold)
                         .lineLimit(2)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Platform")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
 
-                        if let currentPlatform = currentPlatform {
-                            HStack(spacing: 8) {
-                                Image(systemName: currentPlatform.systemImage)
-                                    .foregroundStyle(Color.accentColor)
-                                    .font(.system(size: 16))
-
-                                Text(currentPlatform.displayName)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
-                        } else {
-                            Text("Unknown Platform")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    if let platformSummaryText {
-                        Text(platformSummaryText)
+                    // Status with icon
+                    HStack(spacing: 6) {
+                        Image(systemName: currentStatus.systemImage)
+                            .font(.system(size: 12))
+                        Text(currentStatus.description)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .fontWeight(.medium)
                     }
-                    
+                    .foregroundStyle(currentStatus.color)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background {
+                        Capsule().fill(currentStatus.color.opacity(0.2))
+                    }
+
+                    // Platform badge
+                    PlatformBadge(platform: currentPlatform, isSelected: true)
+
+                    // Bundle ID (from appInfo, available immediately)
                     Text(currentBundleID)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    
-                    Text("App ID: \(currentAppID)")
+
+                    // App ID (from appInfo, available immediately)
+                    Text("ID: \(currentAppID)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
-                    
-                    HStack(spacing: 8) {
-                        Image(systemName: currentStatus.systemImage)
-                            .foregroundStyle(currentStatus.color)
-                        Text(currentStatus.description)
-                            .font(.caption)
-                    }
-                    
+
+                    // View in App Store button
                     if let url = appStoreURL {
                         Button {
                             openURL(url)
                         } label: {
-                            Label("View in App Store", systemImage: "link")
+                            Label("App Store", systemImage: "arrow.up.right.square")
                                 .font(.caption)
                         }
                         .buttonStyle(.bordered)
@@ -175,7 +158,8 @@ struct AppDetailView: View {
             .padding(16)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: 200, alignment: .leading)
+        .frame(width: 240, alignment: .leading)
+        .navigationSplitViewColumnWidth(240)
     }
 
 // MARK: - Supporting Views

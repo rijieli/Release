@@ -65,7 +65,7 @@ struct ReleaseNotesTab: View {
                 EmptyReleaseNotesView()
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(displayedReleaseNotes) { releaseNote in
                             ReleaseNoteCard(releaseNote: releaseNote, selectedPlatform: selectedPlatform)
                         }
@@ -137,16 +137,18 @@ struct ReleaseNotesTab: View {
                     }
                 }
 
-                // Always show the current release note for reference
-                Divider()
-                    .padding(.vertical, 8)
+                // Show current release note for reference only when not preparing for submission
+                if !isEditable {
+                    Divider()
+                        .padding(.vertical, 8)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Current Release Notes")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Current Release Notes")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
 
-                    ReleaseNoteCard(releaseNote: releaseNote, selectedPlatform: selectedPlatform)
+                        ReleaseNoteCard(releaseNote: releaseNote, selectedPlatform: selectedPlatform)
+                    }
                 }
 
                 if !previousNotes.isEmpty {
@@ -419,60 +421,60 @@ struct ReleaseNotesTab: View {
 struct ReleaseNoteCard: View {
     let releaseNote: ReleaseNote
     let selectedPlatform: Platform?
-    
+    @State var isExpanded = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Version \(releaseNote.version)")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    if let releaseDate = releaseNote.releaseDate {
-                        Text("Released \(DateFormatter.releaseDate.string(from: releaseDate))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 8) {
-                    if let platform = releaseNote.platform {
-                        PlatformBadge(
-                            platform: platform,
-                            isSelected: selectedPlatform == platform
-                        )
-                    }
-                    
-                    if releaseNote.localizedNotes.count > 1 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                            Text("\(releaseNote.localizedNotes.count) languages")
-                        }
-                        .font(.caption)
+        DisclosureGroup(isExpanded: $isExpanded) {
+            Group {
+                if releaseNote.localizedNotes.isEmpty {
+                    Text("No release notes available.")
+                        .font(.body)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(releaseNote.localizedNotes) { localizedNote in
+                            LocalizedReleaseNoteView(localizedNote: localizedNote)
+                        }
                     }
                 }
             }
-            
-            if releaseNote.localizedNotes.isEmpty {
-                Text("No release notes available.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(releaseNote.localizedNotes) { localizedNote in
-                        LocalizedReleaseNoteView(localizedNote: localizedNote)
+        } label: {
+            HStack(spacing: 4) {
+                Text("Version \(releaseNote.version)")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                if let releaseDate = releaseNote.releaseDate {
+                    Text("Released \(DateFormatter.releaseDate.string(from: releaseDate))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if releaseNote.localizedNotes.count > 1 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "globe")
+                        Text("\(releaseNote.localizedNotes.count) languages")
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .frame(height: 24)
+            .contentShape(.rect)
+            .onTapGesture {
+                withAnimation {
+                    isExpanded.toggle()
                 }
             }
         }
-        .padding()
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .padding(16)
+        .background {
+            RoundedRectangle(cornerRadius: 8).fill(.background)
+        }
     }
 }
 
@@ -485,10 +487,10 @@ private struct ReleaseEditor: View {
         TextEditor(text: $text)
             .frame(minHeight: minHeight)
             .padding(8)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+            .background(.background, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(.secondary.opacity(0.3))
+                    .stroke(.background.secondary)
             )
             .scrollContentBackground(.hidden)
             .disabled(!isEditable)

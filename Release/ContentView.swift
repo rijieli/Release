@@ -95,26 +95,20 @@ struct ContentView: View {
         } detail: {
             VStack(spacing: 0) {
                 // Compact toolbar with inline search
-                HStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        
-                        TextField("Search apps...", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .onSubmit {
-                                // Handle search submission if needed
-                            }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
                     
-                    Spacer()
+                    TextField("Search apps...", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .onSubmit {
+                            // Handle search submission if needed
+                        }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.regularMaterial)
+                .padding(16)
+                .background {
+                    Color.white
+                }
                 
                 Divider()
                 
