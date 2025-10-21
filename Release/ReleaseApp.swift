@@ -6,17 +6,24 @@
 //
 
 import SwiftUI
+import Combine
 
 let kMainWindowID = "Window.Main"
 
 @main
 struct ReleaseApp: App {
     @StateObject private var settingsManager = SettingsManager()
-    
+    @StateObject private var updateManager = UpdateManager.shared
+
     var body: some Scene {
         WindowGroup("Release", id: kMainWindowID) {
             ContentView()
                 .environmentObject(settingsManager)
+                .environmentObject(updateManager)
+                .task {
+                    // Check for updates on app launch
+                    await updateManager.checkForUpdates()
+                }
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -27,7 +34,17 @@ struct ReleaseApp: App {
                     // Handle about action
                 }
             }
-            
+
+            CommandGroup(after: .appInfo) {
+                Button(updateManager.isCheckingForUpdates ? "Checking..." : "Check for Updates...") {
+                    Task {
+                        await updateManager.checkForUpdates()
+                    }
+                }
+                .keyboardShortcut("u", modifiers: .command)
+                .disabled(updateManager.isCheckingForUpdates)
+            }
+
             CommandGroup(after: .toolbar) {
                 Button("Refresh Apps") {
                     NotificationCenter.default.post(name: .refreshApps, object: nil)

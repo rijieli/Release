@@ -112,3 +112,4 @@ xcuserdata/
 .DS_Store
 Archives/*
 *.dmg
+Config.plist
