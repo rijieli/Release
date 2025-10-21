@@ -37,9 +37,8 @@ struct ReleaseApp: App {
 
             CommandGroup(after: .appInfo) {
                 Button(updateManager.isCheckingForUpdates ? "Checking..." : "Check for Updates...") {
-                    Task {
-                        await updateManager.checkForUpdates()
-                    }
+                    // This will be handled by ContentView's checkForUpdatesManually()
+                    NotificationCenter.default.post(name: .manualUpdateCheck, object: nil)
                 }
                 .keyboardShortcut("u", modifiers: .command)
                 .disabled(updateManager.isCheckingForUpdates)
@@ -79,4 +78,5 @@ struct ReleaseApp: App {
 // MARK: - Notifications
 extension Notification.Name {
     static let refreshApps = Notification.Name("refreshApps")
+    static let manualUpdateCheck = Notification.Name("manualUpdateCheck")
 }

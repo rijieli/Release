@@ -17,32 +17,13 @@ class UpdateManager: ObservableObject {
     @Published var updateAvailable = false
     @Published var latestRelease: GitHubRelease?
     @Published var updateError: String?
-    @Published var isDownloading = false
-    @Published var downloadProgress: Double = 0
     
-    fileprivate let debugMode = true
+    private var debugMode: Bool { SettingsModel.shared.debugUpdaterEnabled }
 
     private let owner = "rijieli"
     private let repo = "Release"
-    private var ghToken: String? {
-        // Try to load from local config file (not committed to git)
-        if let token = loadTokenFromConfig() {
-            return token
-        }
-        // Fallback to environment variable (for CI/CD)
-        return ProcessInfo.processInfo.environment["GITHUB_TOKEN"]
-    }
-
-    private func loadTokenFromConfig() -> String? {
-        guard let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
-              let configDict = NSDictionary(contentsOfFile: configPath),
-              let token = configDict["GitHubToken"] as? String,
-              !token.isEmpty else {
-            return nil
-        }
-        return token
-    }
-
+    private var ghToken: String? { AppConstants.githubToken }
+    
     private init() {}
 
     func checkForUpdates() async {
@@ -83,7 +64,7 @@ class UpdateManager: ObservableObject {
         }
     }
 
-    func downloadAndInstallUpdate() async {
+    func openDownloadURL() async {
         guard let release = latestRelease else {
             await MainActor.run {
                 updateError = "No release information available"
@@ -101,53 +82,22 @@ class UpdateManager: ObservableObject {
         }
 
         await MainActor.run {
-            isDownloading = true
-            downloadProgress = 0
             updateError = nil // Clear previous error
         }
 
         do {
-            let tempDir = FileManager.default.temporaryDirectory
-            let dmgtName = dmgURL.lastPathComponent
-            let localDMGPath = tempDir.appendingPathComponent(dmgtName)
-
-            // Clean up any existing download first
-            if FileManager.default.fileExists(atPath: localDMGPath.path) {
-                try? FileManager.default.removeItem(at: localDMGPath)
-                if debugMode {
-                    print("Cleaned up existing download: \(localDMGPath.path)")
-                }
-            }
-
-            // Download DMG
-            try await downloadFile(from: dmgURL, to: localDMGPath, progress: { progress in
-                await MainActor.run {
-                    self.downloadProgress = progress
-                }
-            })
-
-            // Mount and install
-            try await installDMG(at: localDMGPath)
-
-            // Clean up
-            try? FileManager.default.removeItem(at: localDMGPath)
-
             await MainActor.run {
-                self.isDownloading = false
-                // Restart app after successful update
-                NSApplication.shared.terminate(nil)
+                NSWorkspace.shared.open(dmgURL)
             }
 
+            if debugMode {
+                print("Opened download URL in browser: \(dmgURL)")
+            }
         } catch {
             await MainActor.run {
-                self.updateError = "Update failed: \(error.localizedDescription)"
-                self.isDownloading = false
+                self.updateError = "Failed to open download URL: \(error.localizedDescription)"
             }
         }
-    }
-
-    func retryUpdate() async {
-        await downloadAndInstallUpdate()
     }
 
     private func getCurrentVersion() -> String {
@@ -176,29 +126,14 @@ class UpdateManager: ObservableObject {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-
-        let printRequest = {
-            print("=== GitHub API Response ===")
-            print("URL: \(url)")
-            print("Status Code: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-
-            if let httpResponse = response as? HTTPURLResponse {
-                print("Headers: \(httpResponse.allHeaderFields)")
-            }
-
-            // Try to print response as string
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("Response Body: \(responseString)")
-            } else {
-                print("Response Body: [Unable to decode as UTF-8 string]")
-            }
-            print("=== End GitHub API Response ===")
-        }
         
-        // Debug logging
-        if debugMode {
-            printRequest()
-        }
+        #if DEBUG
+        // print("=== GitHub API Response ===")
+        // if let responseString = String(data: data, encoding: .utf8) {
+        //     print("Response Body: \(responseString)")
+        // }
+        // print("=== End GitHub API Response ===")
+        #endif
 
         // Check HTTP status
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
@@ -208,91 +143,7 @@ class UpdateManager: ObservableObject {
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
 
-    private func downloadFile(from url: URL, to destination: URL, progress: @escaping (Double) async -> Void) async throws {
-        print("Starting download from: \(url)")
-
-        let request = URLRequest(url: url)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let expectedLength = response.expectedContentLength
-
-        if debugMode {
-            print("Expected file size: \(expectedLength) bytes")
-            print("Downloaded size: \(data.count) bytes")
-        }
-
-        // For this simple implementation, we'll simulate progress
-        // since URLSession.shared.data() doesn't provide progress tracking
-        let totalBytes = Int64(data.count)
-
-        if expectedLength > 0 {
-            for i in 1...10 {
-                let progressValue = Double(i) / 10.0
-                await progress(progressValue)
-
-                if debugMode {
-                    print("Download progress: \(i * 10)%")
-                }
-
-                // Add a small delay to make progress visible
-                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-            }
-        }
-
-        print("Download completed. Total size: \(data.count) bytes")
-        try data.write(to: destination)
-    }
-
-    private func installDMG(at path: URL) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        process.arguments = ["attach", path.path, "-nobrowse", "-quiet"]
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            throw UpdateError.mountFailed
-        }
-
-        // Find mounted volume
-        let volumes = try FileManager.default.contentsOfDirectory(atPath: "/Volumes")
-        let appVolumes = volumes.filter { $0.contains("Release") }
-
-        guard let volume = appVolumes.first else {
-            throw UpdateError.volumeNotFound
-        }
-
-        let volumePath = "/Volumes/\(volume)"
-        let appsInDMG = try FileManager.default.contentsOfDirectory(atPath: volumePath)
-            .filter { $0.hasSuffix(".app") }
-
-        guard let appName = appsInDMG.first else {
-            throw UpdateError.appNotFound
-        }
-
-        let sourceApp = "\(volumePath)/\(appName)"
-        let destinationAppURL = URL(fileURLWithPath: Bundle.main.bundlePath)
-        let destinationParent = destinationAppURL.deletingLastPathComponent().path
-
-        // Replace current app
-        process.executableURL = URL(fileURLWithPath: "/bin/cp")
-        process.arguments = ["-R", sourceApp, destinationParent]
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            throw UpdateError.copyFailed
-        }
-
-        // Unmount
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        process.arguments = ["detach", volumePath]
-
-        try process.run()
-        process.waitUntilExit()
-    }
-
+    
     private func isNewerVersion(_ latest: String, _ current: String) -> Bool {
         let latestVersion = versionToNumber(latest.replacingOccurrences(of: "v", with: ""))
         let currentVersion = versionToNumber(current)
@@ -336,24 +187,18 @@ struct Asset: Codable {
 
 // MARK: - Errors
 enum UpdateError: LocalizedError {
-    case mountFailed
-    case volumeNotFound
-    case appNotFound
-    case copyFailed
     case httpError(Int)
+    case noDMGFound
+    case failedToOpenURL
 
     var errorDescription: String? {
         switch self {
-        case .mountFailed:
-            return "Failed to mount DMG"
-        case .volumeNotFound:
-            return "Could not find mounted volume"
-        case .appNotFound:
-            return "No app found in DMG"
-        case .copyFailed:
-            return "Failed to copy app to Applications"
         case .httpError(let code):
             return "GitHub API error (HTTP \(code))"
+        case .noDMGFound:
+            return "No DMG file found in release assets"
+        case .failedToOpenURL:
+            return "Failed to open download URL in browser"
         }
     }
 }

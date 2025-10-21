@@ -9,42 +9,48 @@ import SwiftUI
 
 struct UpdateNotificationView: View {
     @ObservedObject var updateManager: UpdateManager
+    @StateObject private var settingsModel = SettingsModel.shared
     @Environment(\.openWindow) private var openWindow
+
+    var shouldShowNotification: Bool {
+        guard let latestVersion = updateManager.latestRelease?.tagName else { return false }
+        return updateManager.updateAvailable &&
+               !settingsModel.shouldShowUpdateNotification(for: latestVersion)
+    }
 
     var body: some View {
         VStack {
-            if updateManager.updateAvailable && !updateManager.isDownloading {
+            if shouldShowNotification {
                 HStack {
                     Image(systemName: "arrow.down.circle.fill")
                         .foregroundColor(.blue)
 
-                    Text("New version \(updateManager.latestRelease?.tagName.replacingOccurrences(of: "v", with: "") ?? "") available")
+                    Text("Version \(updateManager.latestRelease?.tagName.replacingOccurrences(of: "v", with: "") ?? "") available")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .font(.caption)
 
                     Spacer()
 
-                    Button("Update") {
+                    Button("Download") {
                         Task {
-                            await updateManager.downloadAndInstallUpdate()
+                            await updateManager.openDownloadURL()
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
 
-                    Button("Ignore") {
-                        // Dismiss notification by setting updateAvailable to false
-                        // User can still check manually later
+                    Button {
+                        // Ignore this version by adding it to ignored versions
+                        if let latestVersion = updateManager.latestRelease?.tagName {
+                            settingsModel.ignoreUpdateVersion(latestVersion)
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                }
-            } else if updateManager.isDownloading {
-                VStack {
-                    Text("Downloading update...")
-                        .font(.caption)
-
-                    ProgressView(value: updateManager.downloadProgress)
-                        .controlSize(.small)
                 }
             } else if let error = updateManager.updateError {
                 HStack {
@@ -59,7 +65,7 @@ struct UpdateNotificationView: View {
 
                     Button("Retry") {
                         Task {
-                            await updateManager.retryUpdate()
+                            await updateManager.openDownloadURL()
                         }
                     }
                     .buttonStyle(.borderless)
@@ -68,15 +74,17 @@ struct UpdateNotificationView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
         .background {
-            Capsule().fill(Color(nsColor: .controlBackgroundColor))
+            RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(color: .black.opacity(0.1), radius: 4)
         }
     }
 }
 
 struct UpdateAvailableSheet: View {
     @ObservedObject var updateManager: UpdateManager
+    @StateObject private var settingsModel = SettingsModel.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -109,32 +117,25 @@ struct UpdateAvailableSheet: View {
             }
 
             HStack {
-                if updateManager.isDownloading {
-                    ProgressView()
-                        .controlSize(.small)
-
-                    Text("Downloading...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    if updateManager.downloadProgress > 0 {
-                        Text("\(Int(updateManager.downloadProgress * 100))%")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    Button("Update Now") {
-                        Task {
-                            await updateManager.downloadAndInstallUpdate()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button("Later") {
+                Button("Download in Browser") {
+                    Task {
+                        await updateManager.openDownloadURL()
                         dismiss()
                     }
-                    .keyboardShortcut(.escape)
                 }
+                .buttonStyle(.borderedProminent)
+
+                Button("Ignore This Version") {
+                    if let latestVersion = updateManager.latestRelease?.tagName {
+                        settingsModel.ignoreUpdateVersion(latestVersion)
+                    }
+                    dismiss()
+                }
+
+                Button("Later") {
+                    dismiss()
+                }
+                .keyboardShortcut(.escape)
             }
             .controlSize(.large)
         }

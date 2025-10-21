@@ -112,4 +112,4 @@ xcuserdata/
 .DS_Store
 Archives/*
 *.dmg
-Config.plist
+AppConstants+Release.swift

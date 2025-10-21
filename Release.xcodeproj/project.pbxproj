@@ -14,9 +14,22 @@
 		DB5375A42E93472E00D3241F /* Release.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Release.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DBEA16922EA7CB80004D1DAA /* Exceptions for "Release" folder in "Release" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/AppConstants.swift,
+			);
+			target = DB5375A32E93472E00D3241F /* Release */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		DB5375A62E93472E00D3241F /* Release */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DBEA16922EA7CB80004D1DAA /* Exceptions for "Release" folder in "Release" target */,
+			);
 			path = Release;
 			sourceTree = "<group>";
 		};

@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject private var settingsManager: SettingsManager
     @StateObject private var apiService = AppStoreConnectService.shared
+    @StateObject private var settingsModel = SettingsModel.shared
     @State private var showingFilePicker = false
     @State private var testResult: String?
     @State private var isTestingConnection = false
@@ -31,10 +32,18 @@ struct SettingsView: View {
             .tag(0)
             
             APIInstructionsView()
-                .tabItem {
-                    Label("Instructions", systemImage: "info.circle")
-                }
-                .tag(1)
+            .tabItem {
+                Label("Instructions", systemImage: "info.circle")
+            }
+            .tag(1)
+
+            if settingsModel.debugTabVisible {
+                DebugSettingsView()
+                    .tabItem {
+                        Label("Debug", systemImage: "wrench.and.screwdriver")
+                    }
+                    .tag(2)
+            }
         }
         .fileImporter(
             isPresented: $showingFilePicker,

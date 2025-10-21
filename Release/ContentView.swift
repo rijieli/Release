@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var apiService = AppStoreConnectService.shared
+    @StateObject private var settingsModel = SettingsModel.shared
     @EnvironmentObject private var settingsManager: SettingsManager
     @EnvironmentObject private var updateManager: UpdateManager
     @State private var selectedPlatform: Platform? = nil
@@ -20,6 +21,7 @@ struct ContentView: View {
     @State private var testResult: String?
     @State private var isTestingConnection = false
     @State private var showingUpdateSheet = false
+    @State private var isManualUpdateCheck = false
 
     private var filteredApps: [AppInfo] {
         var apps = apiService.apps
@@ -212,6 +214,10 @@ struct ContentView: View {
                 await apiService.loadApps()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .manualUpdateCheck)) {
+            _ in
+            checkForUpdatesManually()
+        }
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.data, .text],
@@ -233,23 +239,35 @@ struct ContentView: View {
             UpdateAvailableSheet(updateManager: updateManager)
         }
         .onChange(of: updateManager.updateAvailable) { _, available in
-            if available && !updateManager.isDownloading
-                && updateManager.updateError == nil
+            if available && updateManager.updateError == nil
             {
-                showingUpdateSheet = true
+                let currentVersion = updateManager.latestRelease?.tagName ?? ""
+
+                // Show sheet if it's a manual check OR if version is not ignored
+                if isManualUpdateCheck || !settingsModel.shouldShowUpdateNotification(for: currentVersion) {
+                    showingUpdateSheet = true
+                }
+
+                // Reset the manual check flag after processing
+                if isManualUpdateCheck {
+                    isManualUpdateCheck = false
+                }
             }
         }
         .onChange(of: updateManager.isCheckingForUpdates) { _, isChecking in
             if !isChecking && !updateManager.updateAvailable
-                && updateManager.updateError == nil
+                && updateManager.updateError == nil && isManualUpdateCheck
             {
-                // Show "no updates available" message
+                // Show "no updates available" message only for manual checks
                 let alert = NSAlert()
                 alert.messageText = "Check for Updates"
                 alert.informativeText = "You're using the latest version."
                 alert.alertStyle = .informational
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
+
+                // Reset the manual check flag
+                isManualUpdateCheck = false
             }
         }
 
@@ -273,6 +291,13 @@ struct ContentView: View {
         case .failure(let error):
             apiService.errorMessage =
                 "Failed to select file: \(error.localizedDescription)"
+        }
+    }
+
+    private func checkForUpdatesManually() {
+        isManualUpdateCheck = true
+        Task {
+            await updateManager.checkForUpdates()
         }
     }
 }

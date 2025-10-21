@@ -10,6 +10,8 @@ import SwiftUI
 
 
 struct APIInstructionsView: View {
+    @StateObject private var settingsModel = SettingsModel.shared
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -31,7 +33,11 @@ struct APIInstructionsView: View {
                         number: 2,
                         title: "Generate API Key",
                         description: "Click the '+' button to generate a new API key",
-                        icon: "plus.circle"
+                        icon: "plus.circle",
+                        isTappable: true,
+                        tapHandler: {
+                            settingsModel.incrementStep2TapCount()
+                        }
                     )
                     
                     InstructionStep(
@@ -116,7 +122,18 @@ fileprivate struct InstructionStep: View {
     let title: String
     let description: String
     let icon: String
-    
+    let isTappable: Bool
+    let tapHandler: (() -> Void)?
+
+    init(number: Int, title: String, description: String, icon: String, isTappable: Bool = false, tapHandler: (() -> Void)? = nil) {
+        self.number = number
+        self.title = title
+        self.description = description
+        self.icon = icon
+        self.isTappable = isTappable
+        self.tapHandler = tapHandler
+    }
+
     var body: some View {
         HStack(spacing: 16) {
             // Step number
@@ -149,5 +166,11 @@ fileprivate struct InstructionStep: View {
             }
         }
         .maxWidth(alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isTappable {
+                tapHandler?()
+            }
+        }
     }
 }
