@@ -16,7 +16,6 @@ class UpdateManager: ObservableObject {
     @Published var isCheckingForUpdates = false
     @Published var updateAvailable = false
     @Published var latestRelease: GitHubRelease?
-    @Published var updateError: String?
     
     private var debugMode: Bool { SettingsModel.shared.debugUpdaterEnabled }
 
@@ -29,7 +28,6 @@ class UpdateManager: ObservableObject {
     func checkForUpdates() async {
         await MainActor.run {
             isCheckingForUpdates = true
-            updateError = nil
         }
 
         do {
@@ -58,7 +56,6 @@ class UpdateManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.updateError = error.localizedDescription
                 self.isCheckingForUpdates = false
             }
         }
@@ -66,8 +63,8 @@ class UpdateManager: ObservableObject {
 
     func openDownloadURL() async {
         guard let release = latestRelease else {
-            await MainActor.run {
-                updateError = "No release information available"
+            if debugMode {
+                print("No release information available for opening download URL")
             }
             return
         }
@@ -75,28 +72,16 @@ class UpdateManager: ObservableObject {
         // Find the first DMG asset
         guard let dmgAsset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }),
               let dmgURL = dmgAsset.downloadURL else {
-            await MainActor.run {
-                updateError = "No DMG file found in release assets"
+            if debugMode {
+                print("No DMG file found in release assets for opening download URL")
             }
             return
         }
 
-        await MainActor.run {
-            updateError = nil // Clear previous error
-        }
+        NSWorkspace.shared.open(dmgURL)
 
-        do {
-            await MainActor.run {
-                NSWorkspace.shared.open(dmgURL)
-            }
-
-            if debugMode {
-                print("Opened download URL in browser: \(dmgURL)")
-            }
-        } catch {
-            await MainActor.run {
-                self.updateError = "Failed to open download URL: \(error.localizedDescription)"
-            }
+        if debugMode {
+            print("Opened download URL in browser: \(dmgURL)")
         }
     }
 
@@ -126,14 +111,24 @@ class UpdateManager: ObservableObject {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        
-        #if DEBUG
-        // print("=== GitHub API Response ===")
-        // if let responseString = String(data: data, encoding: .utf8) {
-        //     print("Response Body: \(responseString)")
-        // }
-        // print("=== End GitHub API Response ===")
-        #endif
+
+        if debugMode {
+            print("=== GitHub API Response ===")
+            print("URL: \(url)")
+            print("Status Code: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("Headers: \(httpResponse.allHeaderFields)")
+            }
+
+            // Try to print response as string
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Response Body: \(responseString)")
+            } else {
+                print("Response Body: [Unable to decode as UTF-8 string]")
+            }
+            print("=== End GitHub API Response ===")
+        }
 
         // Check HTTP status
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {

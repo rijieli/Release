@@ -239,8 +239,7 @@ struct ContentView: View {
             UpdateAvailableSheet(updateManager: updateManager)
         }
         .onChange(of: updateManager.updateAvailable) { _, available in
-            if available && updateManager.updateError == nil
-            {
+            if available {
                 let currentVersion = updateManager.latestRelease?.tagName ?? ""
 
                 // Show sheet if it's a manual check OR if version is not ignored
@@ -255,9 +254,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: updateManager.isCheckingForUpdates) { _, isChecking in
-            if !isChecking && !updateManager.updateAvailable
-                && updateManager.updateError == nil && isManualUpdateCheck
-            {
+            if !isChecking && !updateManager.updateAvailable && isManualUpdateCheck {
                 // Show "no updates available" message only for manual checks
                 let alert = NSAlert()
                 alert.messageText = "Check for Updates"

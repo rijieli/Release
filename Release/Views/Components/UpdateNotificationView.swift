@@ -14,64 +14,49 @@ struct UpdateNotificationView: View {
 
     var shouldShowNotification: Bool {
         guard let latestVersion = updateManager.latestRelease?.tagName else { return false }
-        return updateManager.updateAvailable &&
-               !settingsModel.shouldShowUpdateNotification(for: latestVersion)
+        return updateManager.updateAvailable
+            && !settingsModel.shouldShowUpdateNotification(for: latestVersion)
     }
 
     var body: some View {
-        VStack {
-            if shouldShowNotification {
-                HStack {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .foregroundColor(.blue)
+        if shouldShowNotification {
+            bannerView
+        }
+    }
 
-                    Text("Version \(updateManager.latestRelease?.tagName.replacingOccurrences(of: "v", with: "") ?? "") available")
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .font(.caption)
+    var bannerView: some View {
+        HStack {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundColor(.blue)
 
-                    Spacer()
+            Text(
+                "Version \(updateManager.latestRelease?.tagName.replacingOccurrences(of: "v", with: "") ?? "") available"
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .font(.caption)
 
-                    Button("Download") {
-                        Task {
-                            await updateManager.openDownloadURL()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+            Spacer()
 
-                    Button {
-                        // Ignore this version by adding it to ignored versions
-                        if let latestVersion = updateManager.latestRelease?.tagName {
-                            settingsModel.ignoreUpdateVersion(latestVersion)
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                }
-            } else if let error = updateManager.updateError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-
-                    Text("Update failed: \(error)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    Button("Retry") {
-                        Task {
-                            await updateManager.openDownloadURL()
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
+            Button("Download") {
+                Task {
+                    await updateManager.openDownloadURL()
                 }
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+
+            Button {
+                // Ignore this version by adding it to ignored versions
+                if let latestVersion = updateManager.latestRelease?.tagName {
+                    settingsModel.ignoreUpdateVersion(latestVersion)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
