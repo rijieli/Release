@@ -486,17 +486,31 @@ extension AppStoreConnectService {
 
         let provider = APIProvider(configuration: configuration)
 
+        // When platform is specified, fetch more versions to ensure we find versions for that platform
+        // If no platform specified, use smaller limit for performance
+        let limit = platform != nil ? 50 : 10
+        
         let versionsRequest = APIEndpoint.v1.apps.id(appId).appStoreVersions.get(parameters: .init(
             fieldsAppStoreVersions: [.versionString, .appStoreState, .platform, .releaseType],
-            limit: 10,
+            limit: limit,
             include: [.appStoreVersionLocalizations],
         ))
 
         let versionsResponse = try await provider.request(versionsRequest)
+        
+        // Filter versions by platform if specified, before fetching release notes
+        let versionsToProcess: [AppStoreConnect_Swift_SDK.AppStoreVersion]
+        if let selectedPlatform = platform {
+            versionsToProcess = versionsResponse.data.filter { version in
+                version.attributes?.platform == selectedPlatform
+            }
+        } else {
+            versionsToProcess = versionsResponse.data
+        }
 
         var releaseNotes: [ReleaseNote] = []
 
-        for version in versionsResponse.data {
+        for version in versionsToProcess {
             let releaseNotesRequest = APIEndpoint.v1.appStoreVersions.id(version.id).appStoreVersionLocalizations.get(parameters: .init(
                 fieldsAppStoreVersionLocalizations: [.locale, .whatsNew]
             ))
@@ -513,27 +527,28 @@ extension AppStoreConnectService {
                     )
                 }
 
-                if !localizedNotes.isEmpty {
-                    let releaseNote = ReleaseNote(
-                        id: version.id,
-                        version: version.attributes?.versionString ?? "Unknown",
-                        platform: version.attributes?.platform,
-                        localizedNotes: localizedNotes,
-                        releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
-                    )
-                    releaseNotes.append(releaseNote)
-                }
+                // Always include the version, even if notes are empty (they might be editable in prepareForSubmission state)
+                let releaseNote = ReleaseNote(
+                    id: version.id,
+                    version: version.attributes?.versionString ?? "Unknown",
+                    platform: version.attributes?.platform,
+                    localizedNotes: localizedNotes,
+                    releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
+                )
+                releaseNotes.append(releaseNote)
             } catch {
-                log.warning("⚠️ Failed to load release notes for version \(version.id): \(error.localizedDescription)")
+                // If fetching localizations fails, still create a release note entry with empty notes
+                // This can happen for versions in certain states
+                let releaseNote = ReleaseNote(
+                    id: version.id,
+                    version: version.attributes?.versionString ?? "Unknown",
+                    platform: version.attributes?.platform,
+                    localizedNotes: [],
+                    releaseDate: version.attributes?.earliestReleaseDate ?? version.attributes?.createdDate
+                )
+                releaseNotes.append(releaseNote)
+                log.debug("📝 Version \(version.attributes?.versionString ?? "Unknown") has no accessible release notes (may be in prepareForSubmission)")
             }
-        }
-
-        if let selectedPlatform = platform {
-            let filtered = releaseNotes.filter { note in
-                guard let notePlatform = note.platform else { return true }
-                return notePlatform == selectedPlatform
-            }
-            return filtered.isEmpty ? releaseNotes : filtered
         }
 
         return releaseNotes
