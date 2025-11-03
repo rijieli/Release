@@ -165,79 +165,42 @@ class AppStoreConnectService: ObservableObject {
             let provider = APIProvider(configuration: configuration)
             var allAppInfos: [AppInfo] = []
 
-            // Make platform-specific requests
-            for (index, platform) in targetPlatforms.enumerated() {
-                do {
-                    // Get apps with versions for this specific platform
-                    let appsRequest = APIEndpoint.v1.apps.get(parameters: .init(
-                        fieldsApps: [.name, .bundleID],
-                        limit: 200
-                    ))
+            // Get all apps
+            let appsRequest = APIEndpoint.v1.apps.get(parameters: .init(
+                fieldsApps: [.name, .bundleID],
+                limit: 200
+            ))
 
-                    let appsResponse = try await provider.request(appsRequest)
+            let appsResponse = try await provider.request(appsRequest)
+            let totalApps = appsResponse.data.count
+            var processedCount = 0
 
-                    // For each app, get the latest version for this platform
-                    let platformAppInfos = try await withThrowingTaskGroup(of: AppInfo?.self) { group in
-                        var results: [AppInfo] = []
+            // For each app, get all versions and create AppInfo for each platform that has versions
+            let appInfos = try await withThrowingTaskGroup(of: [AppInfo].self) { group in
+                var results: [AppInfo] = []
 
-                        for app in appsResponse.data {
-                            group.addTask { [weak self] in
-                                guard let self = self else { return nil }
-                                return try await self.loadAppInfoForPlatform(app: app, platform: platform, provider: provider)
-                            }
-                        }
-
-                        for try await result in group {
-                            if let appInfo = result {
-                                results.append(appInfo)
-                            }
-                        }
-
-                        return results
+                for app in appsResponse.data {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return [] }
+                        return try await self.loadAppInfoForAllPlatforms(app: app, provider: provider)
                     }
+                }
 
-                    allAppInfos.append(contentsOf: platformAppInfos)
-
+                for try await appInfos in group {
+                    results.append(contentsOf: appInfos)
+                    processedCount += 1
+                    
                     // Update progress
-                    let progress = Double(index + 1) / Double(targetPlatforms.count)
+                    let progress = Double(processedCount) / Double(totalApps)
                     await MainActor.run {
                         self.initialLoadingProgress = progress
                     }
-
-                    log.debug("📱 Loaded \(platformAppInfos.count) apps for platform \(platform.displayName)")
-                } catch {
-                    log.warning("⚠️ Failed to load apps for platform \(platform.displayName): \(error.localizedDescription)")
-
-                    // Try a simpler approach - just get basic app info without detailed versions
-                    do {
-                        let fallbackAppsRequest = APIEndpoint.v1.apps.get(parameters: .init(
-                            fieldsApps: [.name, .bundleID],
-                            limit: 200
-                        ))
-
-                        let fallbackAppsResponse = try await provider.request(fallbackAppsRequest)
-
-                        // Create fallback app infos with just the platform (no detailed version info)
-                        let fallbackAppInfos = fallbackAppsResponse.data.map { app in
-                            AppInfo(
-                                id: "\(app.id)-\(platform.id)",
-                                name: app.attributes?.name ?? "Unknown",
-                                bundleID: app.attributes?.bundleID ?? "",
-                                platform: platform,
-                                status: .prepareForSubmission, // Default status
-                                version: nil, // No version info available
-                                lastModified: nil
-                            )
-                        }
-
-                        allAppInfos.append(contentsOf: fallbackAppInfos)
-                        log.warning("⚠️ Used fallback loading for platform \(platform.displayName): \(fallbackAppInfos.count) apps with limited info")
-
-                    } catch {
-                        log.error("❌ Even fallback loading failed for platform \(platform.displayName): \(error.localizedDescription)")
-                    }
                 }
+
+                return results
             }
+
+            allAppInfos = appInfos
 
             await MainActor.run {
                 self.apps = allAppInfos.sorted { $0.name < $1.name }
@@ -247,7 +210,7 @@ class AppStoreConnectService: ObservableObject {
             }
 
             let totalTime = CFAbsoluteTimeGetCurrent() - startTime
-            log.debug("📱 All platform-specific apps loaded in \(String(format: "%.2f", totalTime))s (\(allAppInfos.count) total rows)")
+            log.debug("📱 All apps loaded in \(String(format: "%.2f", totalTime))s (\(allAppInfos.count) total rows)")
 
         } catch {
             let totalTime = CFAbsoluteTimeGetCurrent() - startTime
@@ -261,36 +224,56 @@ class AppStoreConnectService: ObservableObject {
         }
     }
 
-    private func loadAppInfoForPlatform(app: AppStoreConnect_Swift_SDK.App, platform: Platform, provider: APIProvider) async throws -> AppInfo? {
-        // Get app store versions for this specific platform
+    private func loadAppInfoForAllPlatforms(app: AppStoreConnect_Swift_SDK.App, provider: APIProvider) async throws -> [AppInfo] {
+        // Get all app store versions for this app (across all platforms)
         let versionsRequest = APIEndpoint.v1.apps.id(app.id).appStoreVersions.get(parameters: .init(
             fieldsAppStoreVersions: [.versionString, .appStoreState, .platform],
-            limit: 10
+            limit: 50
         ))
 
         let versionsResponse = try await provider.request(versionsRequest)
-
-        // Find the latest version for this platform
-        let platformVersions = versionsResponse.data.filter { version in
-            guard let versionPlatform = version.attributes?.platform else { return false }
-            return versionPlatform == platform
+        
+        // Log platform count for MDClock app
+        let bundleID = app.attributes?.bundleID ?? ""
+        if bundleID.lowercased() == "tech.miidii.mdclock" {
+            let allPlatforms = Set(versionsResponse.data.compactMap { $0.attributes?.platform })
+            log.debug("🔍 MDClock app found! BundleID: \(bundleID), Total platforms: \(allPlatforms.count), Platforms: \(allPlatforms.map { $0.displayName }.joined(separator: ", "))")
+            log.debug("🔍 MDClock versions breakdown: \(versionsResponse.data.count) total versions")
+            for version in versionsResponse.data {
+                if let platform = version.attributes?.platform, let versionString = version.attributes?.versionString {
+                    log.debug("  - Version \(versionString) for \(platform.displayName)")
+                }
+            }
         }
-
-        guard let latestVersion = platformVersions.first else {
-            return nil
+        
+        // Group versions by platform
+        var platformVersionsMap: [Platform: [AppStoreConnect_Swift_SDK.AppStoreVersion]] = [:]
+        for version in versionsResponse.data {
+            guard let platform = version.attributes?.platform else { continue }
+            if platformVersionsMap[platform] == nil {
+                platformVersionsMap[platform] = []
+            }
+            platformVersionsMap[platform]?.append(version)
         }
-
-        let status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
-
-        return AppInfo(
-            id: "\(app.id)-\(platform.id)", // Create unique ID for platform-specific row
-            name: app.attributes?.name ?? "Unknown",
-            bundleID: app.attributes?.bundleID ?? "",
-            platform: platform,
-            status: status,
-            version: latestVersion.attributes?.versionString,
-            lastModified: latestVersion.attributes?.createdDate
-        )
+        
+        // Create AppInfo for each platform that has versions
+        var appInfos: [AppInfo] = []
+        for (platform, versions) in platformVersionsMap {
+            guard let latestVersion = versions.first else { continue }
+            let status = determineStatusFromAppStoreState(latestVersion.attributes?.appStoreState)
+            
+            appInfos.append(AppInfo(
+                id: "\(app.id)-\(platform.id)",
+                name: app.attributes?.name ?? "Unknown",
+                bundleID: bundleID,
+                platform: platform,
+                status: status,
+                version: latestVersion.attributes?.versionString,
+                lastModified: latestVersion.attributes?.createdDate
+            ))
+        }
+        
+        return appInfos
     }
 
     func testConnection() async -> Bool {
