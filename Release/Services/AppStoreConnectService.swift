@@ -232,19 +232,7 @@ class AppStoreConnectService: ObservableObject {
         ))
 
         let versionsResponse = try await provider.request(versionsRequest)
-        
-        // Log platform count for MDClock app
         let bundleID = app.attributes?.bundleID ?? ""
-        if bundleID.lowercased() == "tech.miidii.mdclock" {
-            let allPlatforms = Set(versionsResponse.data.compactMap { $0.attributes?.platform })
-            log.debug("🔍 MDClock app found! BundleID: \(bundleID), Total platforms: \(allPlatforms.count), Platforms: \(allPlatforms.map { $0.displayName }.joined(separator: ", "))")
-            log.debug("🔍 MDClock versions breakdown: \(versionsResponse.data.count) total versions")
-            for version in versionsResponse.data {
-                if let platform = version.attributes?.platform, let versionString = version.attributes?.versionString {
-                    log.debug("  - Version \(versionString) for \(platform.displayName)")
-                }
-            }
-        }
         
         // Group versions by platform
         var platformVersionsMap: [Platform: [AppStoreConnect_Swift_SDK.AppStoreVersion]] = [:]
